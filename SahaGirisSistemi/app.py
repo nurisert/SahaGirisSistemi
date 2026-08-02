@@ -1,4 +1,4 @@
-﻿import io
+import io
 import os
 import sqlite3
 import zipfile
@@ -63,16 +63,57 @@ def get_katilimcilar():
     return df
 
 
+# --- GELİŞMİŞ FONT YÜKLEYİCİ (LINUX / STREAMLIT CLOUD UYUMLU) ---
+def load_scalable_font(font_size, is_bold=False):
+    # Denenecek font yolları (Windows & Linux / Streamlit Cloud)
+    font_paths = [
+        # Linux / DejaVu (Streamlit Cloud varsayılanı)
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        if is_bold
+        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
+        if is_bold
+        else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        # Windows
+        "arialbd.ttf" if is_bold else "arial.ttf",
+        "arial.ttf",
+    ]
+
+    for path in font_paths:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, int(font_size))
+            except Exception:
+                continue
+
+    try:
+        return ImageFont.truetype(
+            "DejaVuSans.ttf" if not is_bold else "DejaVuSans-Bold.ttf",
+            int(font_size),
+        )
+    except Exception:
+        # Son çare: Pillow varsayılan fontunu boyutlandırarak döndür
+        default_font = ImageFont.load_default()
+        try:
+            return default_font.font_variant(size=int(font_size))
+        except Exception:
+            return default_font
+
+
 # --- METİN KUTUSUNA SIĞDIRMA YARDIMCISI ---
 def draw_multiline_autofit(
-    draw, text, font_path, initial_size, max_width, start_y, center_x, fill
+    draw,
+    text,
+    initial_size,
+    max_width,
+    start_y,
+    center_x,
+    fill,
+    is_bold=False,
 ):
     font_size = initial_size
-    while font_size > 10:
-        try:
-            font = ImageFont.truetype(font_path, font_size)
-        except:
-            font = ImageFont.load_default()
+    while font_size > 18:
+        font = load_scalable_font(font_size, is_bold=is_bold)
 
         words = text.split(" ")
         lines = []
@@ -104,7 +145,7 @@ def draw_multiline_autofit(
                     all_fit = False
                     break
             if all_fit:
-                line_height = int(font_size * 1.2)
+                line_height = int(font_size * 1.25)
                 for i, line in enumerate(lines):
                     y_pos = start_y + (i * line_height)
                     draw.text(
@@ -116,12 +157,9 @@ def draw_multiline_autofit(
                     )
                 return
 
-        font_size -= 2
+        font_size -= 4
 
-    try:
-        font = ImageFont.truetype(font_path, 12)
-    except:
-        font = ImageFont.load_default()
+    font = load_scalable_font(18, is_bold=is_bold)
     draw.text((center_x, start_y), text, fill=fill, font=font, anchor="mm")
 
 
@@ -160,9 +198,7 @@ def parse_pdf_participants(pdf_file):
 
 
 # --- 2. YAKA KARTI ÜRETİCİ ---
-# --- 2. YAKA KARTI ÜRETİCİ ---
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
-    # Dosya hem ana dizinde hem de alt klasörde dinamik aransın
     sablon_yolu = "sablon.png"
     if not os.path.exists(sablon_yolu):
         sablon_yolu = os.path.join("SahaGirisSistemi", "sablon.png")
@@ -173,50 +209,43 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         st.error("'sablon.png' dosyası bulunamadı!")
         kart = Image.new("RGB", (800, 1200), color="white")
 
-    if os.path.exists(sablon_yolu):
-        kart = Image.open(sablon_yolu).convert("RGB")
-    else:
-        st.error("'sablon.png' dosyası bulunamadı!")
-        kart = Image.new("RGB", (800, 1200), color="white")
-
     W, H = kart.size
     draw = ImageDraw.Draw(kart)
-    max_text_width = int(W * 0.82)
+    max_text_width = int(W * 0.85)
 
-    font_bold = "arialbd.ttf"
-    font_regular = "arial.ttf"
-
+    # Dinamik Font Boyutlandırma (Görsel genişliğine göre oranlandı)
     draw_multiline_autofit(
         draw,
         ad_soyad,
-        font_bold,
-        int(W * 0.065),
-        max_text_width,
-        H * 0.42,
-        W / 2,
-        "#000000",
+        initial_size=int(W * 0.058),
+        max_width=max_text_width,
+        start_y=H * 0.32,
+        center_x=W / 2,
+        fill="#000000",
+        is_bold=True,
     )
+
     draw_multiline_autofit(
         draw,
         rol,
-        font_regular,
-        int(W * 0.045),
-        max_text_width,
-        H * 0.49,
-        W / 2,
-        "#111111",
+        initial_size=int(W * 0.042),
+        max_width=max_text_width,
+        start_y=H * 0.39,
+        center_x=W / 2,
+        fill="#111111",
+        is_bold=False,
     )
 
     if kulup:
         draw_multiline_autofit(
             draw,
             kulup,
-            font_regular,
-            int(W * 0.042),
-            max_text_width,
-            H * 0.54,
-            W / 2,
-            "#111111",
+            initial_size=int(W * 0.038),
+            max_width=max_text_width,
+            start_y=H * 0.45,
+            center_x=W / 2,
+            fill="#222222",
+            is_bold=False,
         )
 
     is_only_antrenor = rol.strip().lower() == "antrenör"
@@ -224,14 +253,15 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         draw_multiline_autofit(
             draw,
             kategori,
-            font_regular,
-            int(W * 0.042),
-            max_text_width,
-            H * 0.62,
-            W / 2,
-            "#333333",
+            initial_size=int(W * 0.040),
+            max_width=max_text_width,
+            start_y=H * 0.53,
+            center_x=W / 2,
+            fill="#333333",
+            is_bold=True,
         )
 
+    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -244,11 +274,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "RGB"
     )
 
-    qr_w = int(W * 0.28)
+    qr_w = int(W * 0.32)
     qr_img = qr_img.resize((qr_w, qr_w))
 
     qr_x = int((W - qr_w) / 2)
-    qr_y = int(H * 0.80 - (qr_w / 2))
+    qr_y = int(H * 0.77 - (qr_w / 2))
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
@@ -724,7 +754,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         )
 
                     with c_zip2:
-                        st.write("")  # Hizalama için boşluk
+                        st.write("")
                         st.write("")
 
                         if filtre_kat == "Tüm Katılımcılar":
