@@ -1,0 +1,7 @@
+streamlit
+pandas
+qrcode
+pillow
+opencv-python-headless
+pdfplumber
+openpyxl
