@@ -63,18 +63,19 @@ def get_katilimcilar():
     return df
 
 
-# --- GELİŞMİŞ FONT YÜKLEYİCİ (LINUX / STREAMLIT CLOUD UYUMLU) ---
+# --- GELİŞMİŞ FONT YÜKLEYİCİ (TÜRKÇE KARAKTER DESTEKLİ) ---
 def load_scalable_font(font_size, is_bold=False):
-    # Denenecek font yolları (Windows & Linux / Streamlit Cloud)
     font_paths = [
-        # Linux / DejaVu (Streamlit Cloud varsayılanı)
+        # Linux / Streamlit Cloud Türkçe Karakter Destekli Fontlar
+        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
+        if is_bold
+        else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         if is_bold
         else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
         if is_bold
         else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        # Windows
         "arialbd.ttf" if is_bold else "arial.ttf",
         "arial.ttf",
     ]
@@ -86,18 +87,8 @@ def load_scalable_font(font_size, is_bold=False):
             except Exception:
                 continue
 
-    try:
-        return ImageFont.truetype(
-            "DejaVuSans.ttf" if not is_bold else "DejaVuSans-Bold.ttf",
-            int(font_size),
-        )
-    except Exception:
-        # Son çare: Pillow varsayılan fontunu boyutlandırarak döndür
-        default_font = ImageFont.load_default()
-        try:
-            return default_font.font_variant(size=int(font_size))
-        except Exception:
-            return default_font
+    # Son çare varsayılan font
+    return ImageFont.load_default()
 
 
 # --- METİN KUTUSUNA SIĞDIRMA YARDIMCISI ---
@@ -111,8 +102,11 @@ def draw_multiline_autofit(
     fill,
     is_bold=False,
 ):
+    if not text:
+        return
+
     font_size = initial_size
-    while font_size > 18:
+    while font_size > 14:
         font = load_scalable_font(font_size, is_bold=is_bold)
 
         words = text.split(" ")
@@ -145,7 +139,7 @@ def draw_multiline_autofit(
                     all_fit = False
                     break
             if all_fit:
-                line_height = int(font_size * 1.25)
+                line_height = int(font_size * 1.2)
                 for i, line in enumerate(lines):
                     y_pos = start_y + (i * line_height)
                     draw.text(
@@ -157,9 +151,9 @@ def draw_multiline_autofit(
                     )
                 return
 
-        font_size -= 4
+        font_size -= 2
 
-    font = load_scalable_font(18, is_bold=is_bold)
+    font = load_scalable_font(14, is_bold=is_bold)
     draw.text((center_x, start_y), text, fill=fill, font=font, anchor="mm")
 
 
@@ -211,51 +205,55 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
     draw = ImageDraw.Draw(kart)
-    max_text_width = int(W * 0.85)
+    max_text_width = int(W * 0.82)
 
-    # Dinamik Font Boyutlandırma (Görsel genişliğine göre oranlandı)
+    # DİKEY KONUMLANDIRMA (H * 0.43 seviyesine çekildi, üst başlıkla çakışmaz)
+    # 1. Ad Soyad
     draw_multiline_autofit(
         draw,
         ad_soyad,
-        initial_size=int(W * 0.058),
+        initial_size=int(W * 0.055),
         max_width=max_text_width,
-        start_y=H * 0.32,
+        start_y=H * 0.43,
         center_x=W / 2,
         fill="#000000",
         is_bold=True,
     )
 
+    # 2. Rol / Görev
     draw_multiline_autofit(
         draw,
         rol,
-        initial_size=int(W * 0.042),
+        initial_size=int(W * 0.040),
         max_width=max_text_width,
-        start_y=H * 0.39,
+        start_y=H * 0.49,
         center_x=W / 2,
         fill="#111111",
         is_bold=False,
     )
 
+    # 3. Kulüp
     if kulup:
         draw_multiline_autofit(
             draw,
             kulup,
-            initial_size=int(W * 0.038),
+            initial_size=int(W * 0.035),
             max_width=max_text_width,
-            start_y=H * 0.45,
+            start_y=H * 0.54,
             center_x=W / 2,
             fill="#222222",
             is_bold=False,
         )
 
+    # 4. Kategori
     is_only_antrenor = rol.strip().lower() == "antrenör"
     if not is_only_antrenor and kategori:
         draw_multiline_autofit(
             draw,
             kategori,
-            initial_size=int(W * 0.040),
+            initial_size=int(W * 0.038),
             max_width=max_text_width,
-            start_y=H * 0.53,
+            start_y=H * 0.61,
             center_x=W / 2,
             fill="#333333",
             is_bold=True,
@@ -274,11 +272,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "RGB"
     )
 
-    qr_w = int(W * 0.32)
+    qr_w = int(W * 0.28)
     qr_img = qr_img.resize((qr_w, qr_w))
 
     qr_x = int((W - qr_w) / 2)
-    qr_y = int(H * 0.77 - (qr_w / 2))
+    qr_y = int(H * 0.81 - (qr_w / 2))
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
