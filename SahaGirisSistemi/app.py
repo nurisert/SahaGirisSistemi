@@ -160,8 +160,18 @@ def parse_pdf_participants(pdf_file):
 
 
 # --- 2. YAKA KARTI ÜRETİCİ ---
+# --- 2. YAKA KARTI ÜRETİCİ ---
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
+    # Dosya hem ana dizinde hem de alt klasörde dinamik aransın
     sablon_yolu = "sablon.png"
+    if not os.path.exists(sablon_yolu):
+        sablon_yolu = os.path.join("SahaGirisSistemi", "sablon.png")
+
+    if os.path.exists(sablon_yolu):
+        kart = Image.open(sablon_yolu).convert("RGB")
+    else:
+        st.error("'sablon.png' dosyası bulunamadı!")
+        kart = Image.new("RGB", (800, 1200), color="white")
 
     if os.path.exists(sablon_yolu):
         kart = Image.open(sablon_yolu).convert("RGB")
