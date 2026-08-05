@@ -11,7 +11,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 # --- YÖNETİCİ ŞİFRESİ AYARI ---
-ADMIN_PASSWORD = "1234"
+ADMIN_PASSWORD = "151608Amasya"
 DB_PATH = "yarisma.db"
 
 
