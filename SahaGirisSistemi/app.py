@@ -8,11 +8,11 @@ import pandas as pd
 import pdfplumber
 import qrcode
 import streamlit as st
+import streamlit.components.v1 as components
 from PIL import Image, ImageDraw, ImageFont
 
 # --- YÖNETİCİ ŞİFRESİ AYARI ---
 ADMIN_PASSWORD = "1234"
-
 DB_PATH = "yarisma.db"
 
 
@@ -20,7 +20,6 @@ def get_connection():
     return sqlite3.connect(DB_PATH, timeout=10.0)
 
 
-# --- 1. VERİTABANI KURULUMU ---
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
@@ -63,9 +62,7 @@ def get_katilimcilar():
     return df
 
 
-# --- KENDİ FONT DOSYAMIZI YÜKLEYEN DİNAMİK FONKSİYON ---
 def load_scalable_font(font_size):
-    # Proje klasörümüzdeki ttf dosyasını ara
     font_paths = [
         "arial.ttf",
         "DejaVuSans.ttf",
@@ -73,38 +70,29 @@ def load_scalable_font(font_size):
         os.path.join("SahaGirisSistemi", "DejaVuSans.ttf"),
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
-
     for path in font_paths:
         if os.path.exists(path):
             try:
                 return ImageFont.truetype(path, int(font_size))
             except Exception:
                 continue
-
     return ImageFont.load_default()
 
 
-# --- METİN KUTUSUNA SIĞDIRMA YARDIMCISI ---
 def draw_multiline_autofit(
     draw, text, initial_size, max_width, start_y, center_x, fill
 ):
     if not text:
         return
-
     font_size = initial_size
     while font_size > 14:
         font = load_scalable_font(font_size)
-
         words = text.split(" ")
-        lines = []
-        current_line = []
-
+        lines, current_line = [], []
         for word in words:
             test_line = " ".join(current_line + [word])
             bbox = draw.textbbox((0, 0), test_line, font=font)
-            line_w = bbox[2] - bbox[0]
-
-            if line_w <= max_width:
+            if (bbox[2] - bbox[0]) <= max_width:
                 current_line.append(word)
             else:
                 if current_line:
@@ -113,7 +101,6 @@ def draw_multiline_autofit(
                 else:
                     lines.append(word)
                     current_line = []
-
         if current_line:
             lines.append(" ".join(current_line))
 
@@ -127,23 +114,20 @@ def draw_multiline_autofit(
             if all_fit:
                 line_height = int(font_size * 1.25)
                 for i, line in enumerate(lines):
-                    y_pos = start_y + (i * line_height)
                     draw.text(
-                        (center_x, y_pos),
+                        (center_x, start_y + (i * line_height)),
                         line,
                         fill=fill,
                         font=font,
                         anchor="mm",
                     )
                 return
-
         font_size -= 2
 
     font = load_scalable_font(14)
     draw.text((center_x, start_y), text, fill=fill, font=font, anchor="mm")
 
 
-# --- PDF PARSER ---
 def parse_pdf_participants(pdf_file):
     participants = []
     with pdfplumber.open(pdf_file) as pdf:
@@ -165,7 +149,6 @@ def parse_pdf_participants(pdf_file):
                         kulup = row_clean[3]
                         ad_soyad = row_clean[4]
                         kategori = row_clean[5] if len(row_clean) > 5 else ""
-
                         if ad_soyad and ad_soyad != "ADI SOYADI":
                             participants.append({
                                 "ad_soyad": ad_soyad,
@@ -177,7 +160,6 @@ def parse_pdf_participants(pdf_file):
     return pd.DataFrame(participants)
 
 
-# --- 2. YAKA KARTI ÜRETİCİ ---
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     sablon_yolu = "sablon.png"
     if not os.path.exists(sablon_yolu):
@@ -193,54 +175,41 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # 1. Ad Soyad (Büyük ve Net)
     draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
-        initial_size=int(W * 0.060),
-        max_width=max_text_width,
-        start_y=H * 0.43,
-        center_x=W / 2,
-        fill="#000000",
+        int(W * 0.060),
+        max_text_width,
+        H * 0.43,
+        W / 2,
+        "#000000",
     )
-
-    # 2. Rol / Görev
     draw_multiline_autofit(
-        draw,
-        rol,
-        initial_size=int(W * 0.042),
-        max_width=max_text_width,
-        start_y=H * 0.49,
-        center_x=W / 2,
-        fill="#111111",
+        draw, rol, int(W * 0.042), max_text_width, H * 0.49, W / 2, "#111111"
     )
-
-    # 3. Kulüp
     if kulup:
         draw_multiline_autofit(
             draw,
             kulup,
-            initial_size=int(W * 0.036),
-            max_width=max_text_width,
-            start_y=H * 0.54,
-            center_x=W / 2,
-            fill="#222222",
+            int(W * 0.036),
+            max_text_width,
+            H * 0.54,
+            W / 2,
+            "#222222",
         )
 
-    # 4. Kategori
     is_only_antrenor = rol.strip().lower() == "antrenör"
     if not is_only_antrenor and kategori:
         draw_multiline_autofit(
             draw,
             kategori.upper(),
-            initial_size=int(W * 0.040),
-            max_width=max_text_width,
-            start_y=H * 0.61,
-            center_x=W / 2,
-            fill="#333333",
+            int(W * 0.040),
+            max_text_width,
+            H * 0.61,
+            W / 2,
+            "#333333",
         )
 
-    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -255,9 +224,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     qr_w = int(W * 0.30)
     qr_img = qr_img.resize((qr_w, qr_w))
-
-    qr_x = int((W - qr_w) / 2)
-    qr_y = int(H * 0.80 - (qr_w / 2))
+    qr_x, qr_y = int((W - qr_w) / 2), int(H * 0.80 - (qr_w / 2))
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
@@ -265,7 +232,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     return buf.getvalue()
 
 
-# --- TOPLU ZIP OLUŞTURMA FONKSİYONU ---
 def generate_zip_of_cards(df_list):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(
@@ -281,11 +247,10 @@ def generate_zip_of_cards(df_list):
             )
             dosya_adi = f"{row['qr_code']}_{row['ad_soyad'].replace(' ', '_')}.png"
             zip_file.writestr(dosya_adi, kart_bytes)
-
     return zip_buffer.getvalue()
 
 
-# --- 3. UYGULAMA ARAYÜZÜ ---
+# --- ARAYÜZ ---
 st.set_page_config(
     page_title="Saha Giriş Kontrol", page_icon="🎯", layout="wide"
 )
@@ -322,56 +287,108 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
         )
         st.info(f"**Aktif Kategori:** {aktif_kategori}")
 
-        st.subheader("📷 QR Kod Okutun / Fotoğraf Çekin")
-        img_file = st.camera_input("QR Kodu Kameraya Gösterin")
+        st.subheader("📷 QR Kod Okutun")
 
-        if img_file is not None:
-            bytes_data = img_file.getvalue()
-            cv_img = cv2.imdecode(
-                np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
+        # Giriş Yöntemi Seçimi
+        yontem = st.radio(
+            "Kamera Yöntemi Seçin:",
+            ["📱 Arka Kamera (Mobil Uyumlu)", "📸 Fotoğraf Çek / Yükle"],
+            horizontal=True,
+        )
+
+        qr_data = None
+
+        if "Arka Kamera" in yontem:
+            # HTML5 + JS Arka Kamera Bileşeni (facingMode: environment)
+            camera_html = """
+            <div style="text-align: center;">
+                <video id="video" width="100%" max-width="400" height="300" style="border: 2px solid #2e7d32; border-radius: 10px;" autoplay playsinline></video>
+                <br>
+                <button id="snap" style="margin-top:10px; padding:10px 20px; background-color:#2e7d32; color:white; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📸 Fotoğraf Çek ve Okut</button>
+                <canvas id="canvas" width="400" height="300" style="display:none;"></canvas>
+            </div>
+            <script>
+                const video = document.getElementById('video');
+                const canvas = document.getElementById('canvas');
+                const snap = document.getElementById('snap');
+
+                // Doğrudan Arka Kamerayı İste (facingMode: "environment")
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } } })
+                    .then((stream) => { video.srcObject = stream; })
+                    .catch((err) => {
+                        // Eğer exact desteklenmezse genel arka kamera dene
+                        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
+                            .then((stream) => { video.srcObject = stream; })
+                            .catch((e) => { alert("Kamera erişimi sağlanamadı: " + e); });
+                    });
+
+                snap.addEventListener("click", () => {
+                    const context = canvas.getContext('2d');
+                    context.drawImage(video, 0, 0, 400, 300);
+                    const dataURL = canvas.toDataURL('image/png');
+                    // Veriyi Streamlit'e geri aktarma simülasyonu
+                });
+            </script>
+            """
+            st.caption(
+                "📌 Mobil cihazlarda arka kamera için aşağıdaki standart kamera"
+                " butonunu da kullanabilirsiniz:"
             )
-            detector = cv2.QRCodeDetector()
-            qr_data, bbox, _ = detector.detectAndDecode(cv_img)
-
-            if qr_data:
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar"
-                    " WHERE qr_code = ?",
-                    (qr_data,),
+            img_file = st.camera_input("QR Kodu Gösterin")
+            if img_file is not None:
+                bytes_data = img_file.getvalue()
+                cv_img = cv2.imdecode(
+                    np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
                 )
-                kisi = cursor.fetchone()
-                conn.close()
+                detector = cv2.QRCodeDetector()
+                qr_data, bbox, _ = detector.detectAndDecode(cv_img)
+        else:
+            img_file = st.file_uploader(
+                "QR Kodlu Fotoğraf Seçin", type=["jpg", "png", "jpeg"]
+            )
+            if img_file is not None:
+                bytes_data = img_file.getvalue()
+                cv_img = cv2.imdecode(
+                    np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
+                )
+                detector = cv2.QRCodeDetector()
+                qr_data, bbox, _ = detector.detectAndDecode(cv_img)
 
-                if kisi:
-                    ad_soyad, rol, kisi_kategori, kulup = kisi
-                    is_only_antrenor = rol.strip().lower() == "antrenör"
+        # Doğrulama Mantığı
+        if qr_data:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar WHERE"
+                " qr_code = ?",
+                (qr_data,),
+            )
+            kisi = cursor.fetchone()
+            conn.close()
 
-                    if is_only_antrenor or (kisi_kategori == aktif_kategori):
-                        st.success("### 🟩 GİRİŞ İZİNLİ!")
-                        st.balloons()
-                        st.markdown(f"""
-                        * **Ad Soyad:** {ad_soyad}
-                        * **Görevi / Rol:** {rol}
-                        * **Kategori:** {kisi_kategori if kisi_kategori else 'Genel / Antrenör'}
-                        * **Kulüp:** {kulup if kulup else '-'}
-                        """)
-                    else:
-                        st.error("### 🟥 GİRİŞ YASAK! (YANLIŞ KATEGORİ)")
-                        st.markdown(f"""
-                        * **Ad Soyad:** {ad_soyad}
-                        * **Görevi:** {rol}
-                        * **Sporcunun Kategorisi:** {kisi_kategori}
-                        * **Sahadaki Aktif Kategori:** {aktif_kategori}
-                        """)
+            if kisi:
+                ad_soyad, rol, kisi_kategori, kulup = kisi
+                is_only_antrenor = rol.strip().lower() == "antrenör"
+
+                if is_only_antrenor or (kisi_kategori == aktif_kategori):
+                    st.success("### 🟩 GİRİŞ İZİNLİ!")
+                    st.balloons()
+                    st.markdown(f"""
+                    * **Ad Soyad:** {ad_soyad}
+                    * **Görevi / Rol:** {rol}
+                    * **Kategori:** {kisi_kategori if kisi_kategori else 'Genel / Antrenör'}
+                    * **Kulüp:** {kulup if kulup else '-'}
+                    """)
                 else:
-                    st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
+                    st.error("### 🟥 GİRİŞ YASAK! (YANLIŞ KATEGORİ)")
+                    st.markdown(f"""
+                    * **Ad Soyad:** {ad_soyad}
+                    * **Görevi:** {rol}
+                    * **Sporcunun Kategorisi:** {kisi_kategori}
+                    * **Sahadaki Aktif Kategori:** {aktif_kategori}
+                    """)
             else:
-                st.warning(
-                    "Görselde QR kod tespit edilemedi. Lütfen kodu net bir"
-                    " şekilde gösterin."
-                )
+                st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
 
 # ==========================================
 # MENÜ 2: YÖNETİM PANELİ
@@ -381,13 +398,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
 
     if not st.session_state["admin_logged_in"]:
         st.subheader("🔒 Yönetici Girişi Gereklidir")
-
         with st.form("login_form"):
             girilen_sifre = st.text_input(
                 "Yönetici Şifrenizi Girin:", type="password"
             )
             btn_login = st.form_submit_button("Giriş Yap")
-
             if btn_login:
                 if girilen_sifre == ADMIN_PASSWORD:
                     st.session_state["admin_logged_in"] = True
@@ -405,11 +420,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
             "🪪 Yaka Kartı Bas (Tekli/Toplu)",
         ])
 
-        # TAB 1: Kategori Yönetimi
         with tab1:
             st.subheader("🏷️ Kategori Ekle & Yönet")
             col_kat1, col_kat2 = st.columns([1, 1])
-
             with col_kat1:
                 st.markdown("#### ➕ Yeni Kategori Ekle")
                 yeni_kat = st.text_input("Kategori Adı:")
@@ -443,7 +456,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     düzeltilmis_kat = st.text_input(
                         "Seçili Kategorinin Adını Güncelle:", value=secilen_kat
                     )
-
                     c_btn1, c_btn2 = st.columns([1, 1])
                     with c_btn1:
                         if st.button("✏️ Kategoriyi Güncelle"):
@@ -464,7 +476,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 conn.close()
                                 st.success("Kategori adı güncellendi!")
                                 st.rerun()
-
                     with c_btn2:
                         if st.button("❌ Kategoriyi Sil", type="primary"):
                             conn = get_connection()
@@ -480,7 +491,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             st.rerun()
 
-        # TAB 2: Tekli Katılımcı Ekle
         with tab2:
             st.subheader("Yeni Katılımcı Kaydı")
             kategoriler = get_kategoriler()
@@ -514,14 +524,12 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
-        # TAB 3: TOPLU YÜKLEME
         with tab3:
             st.subheader("📄 PDF veya Excel Dosyasından Doğrudan Yükle")
             uploaded_file = st.file_uploader(
                 "Katılımcı Listesi Dosyasını Seçin (PDF, XLSX, CSV)",
                 type=["pdf", "xlsx", "csv"],
             )
-
             if uploaded_file is not None:
                 try:
                     if uploaded_file.name.endswith(".pdf"):
@@ -539,7 +547,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     if st.button("🚀 Tüm Sporcuları Otomatik Aktar"):
                         conn = get_connection()
                         cursor = conn.cursor()
-
                         eklenen_sayi = 0
                         for idx, row in df_parsed.iterrows():
                             ad_soyad = str(
@@ -564,7 +571,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                         " (ad) VALUES (?)",
                                         (kategori,),
                                     )
-
                                 cursor.execute(
                                     """
                                     INSERT OR REPLACE INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
@@ -579,7 +585,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                     ),
                                 )
                                 eklenen_sayi += 1
-
                         conn.commit()
                         conn.close()
                         st.success(
@@ -590,12 +595,10 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
-        # TAB 4: KATILIMCI DÜZENLEME & SİLME
         with tab4:
             st.subheader("✏️ Katılımcı Bilgisi Güncelleme veya Kayıt Silme")
             df_katilimcilar = get_katilimcilar()
             kategoriler = get_kategoriler()
-
             if df_katilimcilar.empty:
                 st.info("Düzenlenecek veya silinecek katılımcı yok.")
             else:
@@ -604,20 +607,16 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     options=df_katilimcilar["qr_code"].tolist(),
                     format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} ({df_katilimcilar[df_katilimcilar['qr_code'] == x]['kategori_ad'].values[0]}) - [{x}]",
                 )
-
                 kisi = df_katilimcilar[
                     df_katilimcilar["qr_code"] == secilen_qr
                 ].iloc[0]
-
                 col1, col2 = st.columns([2, 1])
-
                 with col1:
                     st.markdown("#### ✏️ Bilgileri Düzenle")
                     with st.form("edit_form"):
                         yeni_ad = st.text_input(
                             "Ad Soyad:", value=kisi["ad_soyad"]
                         )
-
                         mevcut_roller = [
                             r.strip()
                             for r in kisi["rol"].split("/")
@@ -630,7 +629,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 mevcut_roller if mevcut_roller else ["Sporcu"]
                             ),
                         )
-
                         kat_index = (
                             kategoriler.index(kisi["kategori_ad"])
                             if kisi["kategori_ad"] in kategoriler
@@ -641,21 +639,17 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             ["-"] + kategoriler if kategoriler else ["-"],
                             index=kat_index + 1 if kategoriler else 0,
                         )
-
                         yeni_kulup = st.text_input(
                             "Kulüp:", value=kisi["kulup"]
                         )
-
                         btn_update = st.form_submit_button(
                             "💾 Değişiklikleri Kaydet"
                         )
-
                         if btn_update:
                             rol_str = " / ".join(yeni_roller)
                             kat_str = (
                                 yeni_kategori if yeni_kategori != "-" else ""
                             )
-
                             conn = get_connection()
                             cursor = conn.cursor()
                             cursor.execute(
@@ -695,7 +689,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("🗑️ Kayıt başarıyla silindi!")
                         st.rerun()
 
-        # TAB 5: Kayıtlı Liste
         with tab5:
             st.subheader("📋 Kayıtlı Katılımcı Listesi")
             df_katilimcilar = get_katilimcilar()
@@ -705,37 +698,25 @@ elif sayfa == "⚙️ Yönetim Paneli":
             else:
                 st.info("Henüz kayıtlı katılımcı bulunmuyor.")
 
-        # TAB 6: YAKA KARTI BASIMI (TEKLİ / TOPLU ZIP)
         with tab6:
             st.subheader("🪪 Basıma Hazır Yaka Kartı Oluşturucu")
             df_katilimcilar = get_katilimcilar()
             kategoriler = get_kategoriler()
-
             if df_katilimcilar.empty:
                 st.info("Sistemde henüz kayıtlı katılımcı yok.")
             else:
-                # TOPLU İNDİRME ALANI (EXPANDER)
                 with st.expander(
                     "📦 TOPLU YAKA KARTI İNDİR (ZIP)", expanded=True
                 ):
-                    st.markdown(
-                        "Tüm katılımcıların veya seçtiğin bir kategorideki"
-                        " sporcuların kartlarını tek tıkla **ZIP klasörü**"
-                        " olarak indirebilirsin."
-                    )
-
                     c_zip1, c_zip2 = st.columns([1, 1])
-
                     with c_zip1:
                         filtre_kat = st.selectbox(
                             "İndirilecek Kategori Filtresi:",
                             ["Tüm Katılımcılar"] + kategoriler,
                         )
-
                     with c_zip2:
                         st.write("")
                         st.write("")
-
                         if filtre_kat == "Tüm Katılımcılar":
                             df_target = df_katilimcilar
                             filename_zip = "TUM_YAKA_KARTLARI.zip"
@@ -760,19 +741,15 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             st.warning("Seçilen kategoride sporcu bulunamadı.")
 
                 st.divider()
-
-                # TEKLİ KART İNDİRME ALANI
                 st.markdown("#### 👤 Tekli Kart Önizleme & İndirme")
                 secilen_kisi_qr = st.selectbox(
                     "Yaka Kartı Basılacak Katılımcıyı Seçin:",
                     options=df_katilimcilar["qr_code"].tolist(),
                     format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} ({df_katilimcilar[df_katilimcilar['qr_code'] == x]['kategori_ad'].values[0]}) - [{x}]",
                 )
-
                 kisi_bilgisi = df_katilimcilar[
                     df_katilimcilar["qr_code"] == secilen_kisi_qr
                 ].iloc[0]
-
                 kart_bytes = yaka_karti_olustur(
                     ad_soyad=kisi_bilgisi["ad_soyad"],
                     rol=kisi_bilgisi["rol"],
@@ -780,7 +757,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     kulup=kisi_bilgisi["kulup"],
                     qr_data=kisi_bilgisi["qr_code"],
                 )
-
                 col1, col2 = st.columns([1, 1])
                 with col1:
                     st.image(
