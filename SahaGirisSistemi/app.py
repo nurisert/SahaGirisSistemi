@@ -63,21 +63,15 @@ def get_katilimcilar():
     return df
 
 
-# --- GELİŞMİŞ FONT YÜKLEYİCİ (TÜRKÇE KARAKTER DESTEKLİ) ---
-def load_scalable_font(font_size, is_bold=False):
+# --- KENDİ FONT DOSYAMIZI YÜKLEYEN DİNAMİK FONKSİYON ---
+def load_scalable_font(font_size):
+    # Proje klasörümüzdeki ttf dosyasını ara
     font_paths = [
-        # Linux / Streamlit Cloud Türkçe Karakter Destekli Fontlar
-        "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf"
-        if is_bold
-        else "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-        if is_bold
-        else "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
-        if is_bold
-        else "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "arialbd.ttf" if is_bold else "arial.ttf",
         "arial.ttf",
+        "DejaVuSans.ttf",
+        os.path.join("SahaGirisSistemi", "arial.ttf"),
+        os.path.join("SahaGirisSistemi", "DejaVuSans.ttf"),
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     ]
 
     for path in font_paths:
@@ -87,27 +81,19 @@ def load_scalable_font(font_size, is_bold=False):
             except Exception:
                 continue
 
-    # Son çare varsayılan font
     return ImageFont.load_default()
 
 
 # --- METİN KUTUSUNA SIĞDIRMA YARDIMCISI ---
 def draw_multiline_autofit(
-    draw,
-    text,
-    initial_size,
-    max_width,
-    start_y,
-    center_x,
-    fill,
-    is_bold=False,
+    draw, text, initial_size, max_width, start_y, center_x, fill
 ):
     if not text:
         return
 
     font_size = initial_size
     while font_size > 14:
-        font = load_scalable_font(font_size, is_bold=is_bold)
+        font = load_scalable_font(font_size)
 
         words = text.split(" ")
         lines = []
@@ -139,7 +125,7 @@ def draw_multiline_autofit(
                     all_fit = False
                     break
             if all_fit:
-                line_height = int(font_size * 1.2)
+                line_height = int(font_size * 1.25)
                 for i, line in enumerate(lines):
                     y_pos = start_y + (i * line_height)
                     draw.text(
@@ -153,7 +139,7 @@ def draw_multiline_autofit(
 
         font_size -= 2
 
-    font = load_scalable_font(14, is_bold=is_bold)
+    font = load_scalable_font(14)
     draw.text((center_x, start_y), text, fill=fill, font=font, anchor="mm")
 
 
@@ -205,31 +191,28 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
     draw = ImageDraw.Draw(kart)
-    max_text_width = int(W * 0.82)
+    max_text_width = int(W * 0.85)
 
-    # DİKEY KONUMLANDIRMA (H * 0.43 seviyesine çekildi, üst başlıkla çakışmaz)
-    # 1. Ad Soyad
+    # 1. Ad Soyad (Büyük ve Net)
     draw_multiline_autofit(
         draw,
-        ad_soyad,
-        initial_size=int(W * 0.055),
+        ad_soyad.upper(),
+        initial_size=int(W * 0.060),
         max_width=max_text_width,
         start_y=H * 0.43,
         center_x=W / 2,
         fill="#000000",
-        is_bold=True,
     )
 
     # 2. Rol / Görev
     draw_multiline_autofit(
         draw,
         rol,
-        initial_size=int(W * 0.040),
+        initial_size=int(W * 0.042),
         max_width=max_text_width,
         start_y=H * 0.49,
         center_x=W / 2,
         fill="#111111",
-        is_bold=False,
     )
 
     # 3. Kulüp
@@ -237,12 +220,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         draw_multiline_autofit(
             draw,
             kulup,
-            initial_size=int(W * 0.035),
+            initial_size=int(W * 0.036),
             max_width=max_text_width,
             start_y=H * 0.54,
             center_x=W / 2,
             fill="#222222",
-            is_bold=False,
         )
 
     # 4. Kategori
@@ -250,13 +232,12 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     if not is_only_antrenor and kategori:
         draw_multiline_autofit(
             draw,
-            kategori,
-            initial_size=int(W * 0.038),
+            kategori.upper(),
+            initial_size=int(W * 0.040),
             max_width=max_text_width,
             start_y=H * 0.61,
             center_x=W / 2,
             fill="#333333",
-            is_bold=True,
         )
 
     # QR KOD YERLEŞTİRME
@@ -272,11 +253,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "RGB"
     )
 
-    qr_w = int(W * 0.28)
+    qr_w = int(W * 0.30)
     qr_img = qr_img.resize((qr_w, qr_w))
 
     qr_x = int((W - qr_w) / 2)
-    qr_y = int(H * 0.81 - (qr_w / 2))
+    qr_y = int(H * 0.80 - (qr_w / 2))
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
