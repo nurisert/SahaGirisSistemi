@@ -8,7 +8,6 @@ import pandas as pd
 import pdfplumber
 import qrcode
 import streamlit as st
-import streamlit.components.v1 as components
 from PIL import Image, ImageDraw, ImageFont
 
 # --- YÖNETİCİ ŞİFRESİ AYARI ---
@@ -270,7 +269,7 @@ if st.session_state["admin_logged_in"]:
         st.rerun()
 
 # ==========================================
-# MENÜ 1: GİRİŞ KONTROLÜ (SAHA)
+# MENÜ 1: GİRİŞ KONTROLÜ (SAHA) - ANLIK KAMERA SCANNER
 # ==========================================
 if sayfa == "📱 Giriş Kontrolü (Saha)":
     st.header("📱 Kapı Kontrol Ekranı")
@@ -289,106 +288,59 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
 
         st.subheader("📷 QR Kod Okutun")
 
-        # Giriş Yöntemi Seçimi
-        yontem = st.radio(
-            "Kamera Yöntemi Seçin:",
-            ["📱 Arka Kamera (Mobil Uyumlu)", "📸 Fotoğraf Çek / Yükle"],
-            horizontal=True,
+        # Doğrudan Anlık Kamera Alanı
+        img_file = st.camera_input(
+            "Kamerayı QR Koda Tutun ve Butona Basın",
+            help="Mobilde kamera ekranında çıkan döndürme simgesiyle arka kamerayı seçebilirsiniz.",
         )
 
-        qr_data = None
-
-        if "Arka Kamera" in yontem:
-            # HTML5 + JS Arka Kamera Bileşeni (facingMode: environment)
-            camera_html = """
-            <div style="text-align: center;">
-                <video id="video" width="100%" max-width="400" height="300" style="border: 2px solid #2e7d32; border-radius: 10px;" autoplay playsinline></video>
-                <br>
-                <button id="snap" style="margin-top:10px; padding:10px 20px; background-color:#2e7d32; color:white; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📸 Fotoğraf Çek ve Okut</button>
-                <canvas id="canvas" width="400" height="300" style="display:none;"></canvas>
-            </div>
-            <script>
-                const video = document.getElementById('video');
-                const canvas = document.getElementById('canvas');
-                const snap = document.getElementById('snap');
-
-                // Doğrudan Arka Kamerayı İste (facingMode: "environment")
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: "environment" } } })
-                    .then((stream) => { video.srcObject = stream; })
-                    .catch((err) => {
-                        // Eğer exact desteklenmezse genel arka kamera dene
-                        navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } })
-                            .then((stream) => { video.srcObject = stream; })
-                            .catch((e) => { alert("Kamera erişimi sağlanamadı: " + e); });
-                    });
-
-                snap.addEventListener("click", () => {
-                    const context = canvas.getContext('2d');
-                    context.drawImage(video, 0, 0, 400, 300);
-                    const dataURL = canvas.toDataURL('image/png');
-                    // Veriyi Streamlit'e geri aktarma simülasyonu
-                });
-            </script>
-            """
-            st.caption(
-                "📌 Mobil cihazlarda arka kamera için aşağıdaki standart kamera"
-                " butonunu da kullanabilirsiniz:"
+        if img_file is not None:
+            bytes_data = img_file.getvalue()
+            cv_img = cv2.imdecode(
+                np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
             )
-            img_file = st.camera_input("QR Kodu Gösterin")
-            if img_file is not None:
-                bytes_data = img_file.getvalue()
-                cv_img = cv2.imdecode(
-                    np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
+            detector = cv2.QRCodeDetector()
+            qr_data, bbox, _ = detector.detectAndDecode(cv_img)
+
+            if qr_data:
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar"
+                    " WHERE qr_code = ?",
+                    (qr_data,),
                 )
-                detector = cv2.QRCodeDetector()
-                qr_data, bbox, _ = detector.detectAndDecode(cv_img)
-        else:
-            img_file = st.file_uploader(
-                "QR Kodlu Fotoğraf Seçin", type=["jpg", "png", "jpeg"]
-            )
-            if img_file is not None:
-                bytes_data = img_file.getvalue()
-                cv_img = cv2.imdecode(
-                    np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
-                )
-                detector = cv2.QRCodeDetector()
-                qr_data, bbox, _ = detector.detectAndDecode(cv_img)
+                kisi = cursor.fetchone()
+                conn.close()
 
-        # Doğrulama Mantığı
-        if qr_data:
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar WHERE"
-                " qr_code = ?",
-                (qr_data,),
-            )
-            kisi = cursor.fetchone()
-            conn.close()
+                if kisi:
+                    ad_soyad, rol, kisi_kategori, kulup = kisi
+                    is_only_antrenor = rol.strip().lower() == "antrenör"
 
-            if kisi:
-                ad_soyad, rol, kisi_kategori, kulup = kisi
-                is_only_antrenor = rol.strip().lower() == "antrenör"
-
-                if is_only_antrenor or (kisi_kategori == aktif_kategori):
-                    st.success("### 🟩 GİRİŞ İZİNLİ!")
-                    st.balloons()
-                    st.markdown(f"""
-                    * **Ad Soyad:** {ad_soyad}
-                    * **Görevi / Rol:** {rol}
-                    * **Kategori:** {kisi_kategori if kisi_kategori else 'Genel / Antrenör'}
-                    * **Kulüp:** {kulup if kulup else '-'}
-                    """)
+                    if is_only_antrenor or (kisi_kategori == aktif_kategori):
+                        st.success("### 🟩 GİRİŞ İZİNLİ!")
+                        st.balloons()
+                        st.markdown(f"""
+                        * **Ad Soyad:** {ad_soyad}
+                        * **Görevi / Rol:** {rol}
+                        * **Kategori:** {kisi_kategori if kisi_kategori else 'Genel / Antrenör'}
+                        * **Kulüp:** {kulup if kulup else '-'}
+                        """)
+                    else:
+                        st.error("### 🟥 GİRİŞ YASAK! (YANLIŞ KATEGORİ)")
+                        st.markdown(f"""
+                        * **Ad Soyad:** {ad_soyad}
+                        * **Görevi:** {rol}
+                        * **Sporcunun Kategorisi:** {kisi_kategori}
+                        * **Sahadaki Aktif Kategori:** {aktif_kategori}
+                        """)
                 else:
-                    st.error("### 🟥 GİRİŞ YASAK! (YANLIŞ KATEGORİ)")
-                    st.markdown(f"""
-                    * **Ad Soyad:** {ad_soyad}
-                    * **Görevi:** {rol}
-                    * **Sporcunun Kategorisi:** {kisi_kategori}
-                    * **Sahadaki Aktif Kategori:** {aktif_kategori}
-                    """)
+                    st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
             else:
-                st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
+                st.warning(
+                    "Görselde QR kod tespit edilemedi. Lütfen QR kodu net ve"
+                    " hizada tutarak tekrar çekin."
+                )
 
 # ==========================================
 # MENÜ 2: YÖNETİM PANELİ
@@ -568,7 +520,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 if kategori and kategori != "None":
                                     cursor.execute(
                                         "INSERT OR IGNORE INTO kategoriler"
-                                        " (ad) VALUES (?)",
+                                        " (ad) VALUES (?)"
                                         (kategori,),
                                     )
                                 cursor.execute(
