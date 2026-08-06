@@ -198,6 +198,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     gorunur_rol = rol.replace("Hakem - ", "").strip()
 
+    # Görevli / Hakem / Delege Kontrolü
+    is_non_athlete = any(
+        k in rol for k in ["Hakem", "Baş Hakem", "İdari Hakem", "Masa Hakemi", "Delegesi", "Görevli"]
+    )
+
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
@@ -212,55 +217,68 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    current_y = H * 0.405
+    # ROL VE FONTLARA GÖRE DİNAMİK BÜYÜKLÜK AYARI
+    if is_non_athlete:
+        # Hakem, Delege ve Görevliler için daha büyük font ve geniş aralık
+        font_name_size = int(W * 0.065)
+        font_role_size = int(W * 0.052)
+        current_y = H * 0.42
+    else:
+        # Sporcular için standart fontlar
+        font_name_size = int(W * 0.052)
+        font_role_size = int(W * 0.042)
+        current_y = H * 0.405
+
+    # 1. Ad Soyad
     current_y = draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
-        int(W * 0.052),
+        font_name_size,
         max_text_width,
         current_y,
         W / 2,
         "#000000",
     )
 
-    current_y += int(H * 0.01)
+    # 2. Rol / Görev
+    current_y += int(H * 0.015 if is_non_athlete else H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
         f"- {gorunur_rol} -",
-        int(W * 0.042),
+        font_role_size,
         max_text_width,
         current_y,
         W / 2,
         "#111111",
     )
 
-    if kulup:
-        current_y += int(H * 0.01)
-        current_y = draw_multiline_autofit(
-            draw,
-            kulup,
-            int(W * 0.035),
-            max_text_width,
-            current_y,
-            W / 2,
-            "#222222",
-        )
+    # Sadece Sporcular / Kulübü Olanlar İçin Kulüp ve Kategori Basılır
+    if not is_non_athlete:
+        if kulup:
+            current_y += int(H * 0.01)
+            current_y = draw_multiline_autofit(
+                draw,
+                kulup,
+                int(W * 0.035),
+                max_text_width,
+                current_y,
+                W / 2,
+                "#222222",
+            )
 
-    is_non_athlete = any(
-        k in rol for k in ["Hakem", "Baş Hakem", "İdari Hakem", "Masa Hakemi", "Delegesi"]
-    )
-    if not is_non_athlete and kategori:
-        current_y += int(H * 0.01)
-        draw_multiline_autofit(
-            draw,
-            kategori.upper(),
-            int(W * 0.040),
-            max_text_width,
-            current_y,
-            W / 2,
-            "#000000",
-        )
+        if kategori:
+            current_y += int(H * 0.01)
+            draw_multiline_autofit(
+                draw,
+                kategori.upper(),
+                int(W * 0.040),
+                max_text_width,
+                current_y,
+                W / 2,
+                "#000000",
+            )
 
+    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -444,6 +462,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
             "🪪 Yaka Kartı Bas (Tekli/Toplu)",
         ])
 
+        # TAB 1: KATEGORİ YÖNETİMİ
         with tab1:
             st.subheader("🏷️ Kategori Ekle, Düzenle & Sil")
             col_kat1, col_kat2 = st.columns([1, 1])
@@ -560,6 +579,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             st.rerun()
 
+        # TAB 2: KATILIMCI SİL/EKLE
         with tab2:
             st.subheader("Yeni Katılımcı veya Görevli Kaydı")
             kategoriler = get_kategoriler()
@@ -599,6 +619,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
+        # TAB 3: PDF TOPLU
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
@@ -668,7 +689,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
-        # TAB 4: DÜZENLE / SİL (GÜVENLİ MULTISELECT İLE)
+        # TAB 4: DÜZENLE / SİL
         with tab4:
             st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
@@ -693,7 +714,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             "Ad Soyad:", value=kisi["ad_soyad"]
                         )
 
-                        # ESKİ METİNLERİ YENİ ROLLERLE UYUMLU HALE GETİRME FİLTRESİ
                         raw_roller = [
                             r.strip().replace("Hakem - ", "")
                             for r in kisi["rol"].split("/")
@@ -765,11 +785,13 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("Silindi!")
                         st.rerun()
 
+        # TAB 5: LİSTE
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
+        # TAB 6: BASIM
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
