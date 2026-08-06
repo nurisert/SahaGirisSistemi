@@ -184,7 +184,10 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
 
-    # BEYAZ ŞEFFAF PERDE (Alt sınır H * 0.64 yapılarak QR ile arası açıldı)
+    # TEMİZ ROL FORMATLAMA: "Hakem - Baş Hakem" ise direkt "Baş Hakem" yazsın
+    gorunur_rol = rol.replace("Hakem - ", "").strip()
+
+    # BEYAZ ŞEFFAF PERDE
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
@@ -199,7 +202,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # 1. Ad Soyad (Font boyutu bir tık küçültüldü: 0.052)
+    # 1. Ad Soyad
     current_y = H * 0.405
     current_y = draw_multiline_autofit(
         draw,
@@ -211,11 +214,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#000000",
     )
 
-    # 2. Rol / Görev (Font boyutu bir tık büyütüldü: 0.042)
+    # 2. Rol / Görev (Sadece Unvan Yazılır)
     current_y += int(H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
-        f"- {rol} -",
+        f"- {gorunur_rol} -",
         int(W * 0.042),
         max_text_width,
         current_y,
@@ -223,7 +226,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#111111",
     )
 
-    # 3. Kulüp (Font boyutu bir tık büyütüldü: 0.035)
+    # 3. Kulüp
     if kulup:
         current_y += int(H * 0.01)
         current_y = draw_multiline_autofit(
@@ -236,8 +239,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#222222",
         )
 
-    # 4. Kategori (Font boyutu bir tık büyütüldü: 0.040)
-    if "Hakem" not in rol and "Delegesi" not in rol and kategori:
+    # 4. Kategori (Hakem veya Delege olanlarda kategori basılmasın)
+    is_non_athlete = any(
+        k in rol for k in ["Hakem", "Baş Hakem", "İdari Hakem", "Masa Hakemi", "Delegesi"]
+    )
+    if not is_non_athlete and kategori:
         current_y += int(H * 0.01)
         draw_multiline_autofit(
             draw,
@@ -249,7 +255,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#000000",
         )
 
-    # QR KOD YERLEŞTİRME
+    # QR KOD
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -352,6 +358,9 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
                     r in rol
                     for r in [
                         "Hakem",
+                        "Baş Hakem",
+                        "İdari Hakem",
+                        "Masa Hakemi",
                         "Antrenör",
                         "Görevli",
                         "Müsabaka Teknik Delegesi",
@@ -561,9 +570,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         "Sporcu",
                         "Antrenör",
                         "Müsabaka Teknik Delegesi",
-                        "Hakem - Baş Hakem",
-                        "Hakem - İdari Hakem",
-                        "Hakem - Masa Hakemi",
+                        "Baş Hakem",
+                        "İdari Hakem",
+                        "Masa Hakemi",
                         "Hakem",
                         "Görevli",
                     ],
@@ -702,9 +711,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 "Sporcu",
                                 "Antrenör",
                                 "Müsabaka Teknik Delegesi",
-                                "Hakem - Baş Hakem",
-                                "Hakem - İdari Hakem",
-                                "Hakem - Masa Hakemi",
+                                "Baş Hakem",
+                                "İdari Hakem",
+                                "Masa Hakemi",
                                 "Hakem",
                                 "Görevli",
                             ],
