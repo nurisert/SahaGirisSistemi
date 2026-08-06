@@ -198,7 +198,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     gorunur_rol = rol.replace("Hakem - ", "").strip()
 
-    # Görevli / Hakem / Delege Kontrolü
     is_non_athlete = any(
         k in rol for k in ["Hakem", "Baş Hakem", "İdari Hakem", "Masa Hakemi", "Delegesi", "Görevli"]
     )
@@ -217,19 +216,15 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # ROL VE FONTLARA GÖRE DİNAMİK BÜYÜKLÜK AYARI
     if is_non_athlete:
-        # Hakem, Delege ve Görevliler için daha büyük font ve geniş aralık
         font_name_size = int(W * 0.065)
         font_role_size = int(W * 0.052)
         current_y = H * 0.42
     else:
-        # Sporcular için standart fontlar
         font_name_size = int(W * 0.052)
         font_role_size = int(W * 0.042)
         current_y = H * 0.405
 
-    # 1. Ad Soyad
     current_y = draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
@@ -240,7 +235,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#000000",
     )
 
-    # 2. Rol / Görev
     current_y += int(H * 0.015 if is_non_athlete else H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
@@ -252,7 +246,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#111111",
     )
 
-    # Sadece Sporcular / Kulübü Olanlar İçin Kulüp ve Kategori Basılır
     if not is_non_athlete:
         if kulup:
             current_y += int(H * 0.01)
@@ -278,7 +271,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
                 "#000000",
             )
 
-    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -579,7 +571,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             st.rerun()
 
-        # TAB 2: KATILIMCI SİL/EKLE
+        # TAB 2: KATILIMCI EKLE (DÜZELTİLMİŞ TEMİZ SQL SORĞUSU)
         with tab2:
             st.subheader("Yeni Katılımcı veya Görevli Kaydı")
             kategoriler = get_kategoriler()
@@ -605,10 +597,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         conn = get_connection()
                         cursor = conn.cursor()
                         cursor.execute(
-                            """
-                            INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
-                            VALUES (?, ?, ?, ?, ?)
-                        """,
+                            "INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup) VALUES (?, ?, ?, ?, ?)",
                             (qr_id.strip(), ad_soyad, rol_str, kat_str, kulup),
                         )
                         conn.commit()
