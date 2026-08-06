@@ -578,7 +578,10 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         conn = get_connection()
                         cursor = conn.cursor()
                         cursor.execute(
-                            "INSERT INTO katilimcilar VALUES (?, ?, ?, ?, ?)",
+                            """
+                            INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
+                            VALUES (?, ?, ?, ?, ?)
+                        """,
                             (qr_id.strip(), ad_soyad, rol_str, kat_str, kulup),
                         )
                         conn.commit()
@@ -765,7 +768,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
-        # TAB 6: BASIM (GÜNCELLENMİŞ İNDİRME FİLTRELERİ)
+        # TAB 6: BASIM
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
