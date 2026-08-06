@@ -37,22 +37,6 @@ def init_db():
             kulup TEXT
         )
     """)
-
-    # İLK AÇILIŞTA EĞER HİÇ KATEGORİ YOKSA SADECE 1 KERE EKLESİN
-    cursor.execute("SELECT COUNT(*) FROM kategoriler")
-    if cursor.fetchone()[0] == 0:
-        varsayilan_kategoriler = [
-            "Büyük Erkek",
-            "Büyük Kadın",
-            "Genç Erkek",
-            "Genç Kadın",
-            "Organik Yay",
-        ]
-        for kat in varsayilan_kategoriler:
-            cursor.execute(
-                "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)", (kat,)
-            )
-
     conn.commit()
     conn.close()
 
@@ -465,7 +449,10 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 st.markdown("#### ✏️ Kategoriyi Düzenle / 🗑️ Sil")
                 kategoriler = get_kategoriler()
                 if not kategoriler:
-                    st.info("Henüz ekli bir kategori yok.")
+                    st.info(
+                        "Henüz ekli bir kategori yok. PDF yükleyerek veya soldan"
+                        " ekleyebilirsiniz."
+                    )
                 else:
                     secilen_kat = st.selectbox(
                         "İşlem Yapılacak Kategoriyi Seçin:", kategoriler
