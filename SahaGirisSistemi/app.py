@@ -11,7 +11,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 # --- YÖNETİCİ ŞİFRESİ AYARI ---
-ADMIN_PASSWORD = "1234"
+ADMIN_PASSWORD = "151608Amasya"
 DB_PATH = "yarisma.db"
 
 
@@ -49,7 +49,6 @@ def get_kategoriler():
     df = pd.read_sql_query("SELECT ad FROM kategoriler", conn)
     conn.close()
     kat_list = df["ad"].tolist()
-    # "Organik Yay" varsayılan olarak yoksa listeye ekleyelim
     if "Organik Yay" not in kat_list:
         kat_list.append("Organik Yay")
     return kat_list
@@ -82,11 +81,13 @@ def load_scalable_font(font_size):
     return ImageFont.load_default()
 
 
+# --- DİNAMİK Y KONUMU DÖNDÜREN METİN ÇİZİCİ ---
 def draw_multiline_autofit(
     draw, text, initial_size, max_width, start_y, center_x, fill
 ):
     if not text:
-        return
+        return start_y
+
     font_size = initial_size
     while font_size > 12:
         font = load_scalable_font(font_size)
@@ -124,11 +125,13 @@ def draw_multiline_autofit(
                         font=font,
                         anchor="mm",
                     )
-                return
+                # Çizilen son metnin Y koordinatını döndür
+                return start_y + (len(lines) * line_height)
         font_size -= 2
 
     font = load_scalable_font(12)
     draw.text((center_x, start_y), text, fill=fill, font=font, anchor="mm")
+    return start_y + int(12 * 1.25)
 
 
 def parse_pdf_participants(pdf_file):
@@ -149,7 +152,6 @@ def parse_pdf_participants(pdf_file):
                     ):
                         continue
                     try:
-                        # Tablo kolon tespiti
                         if len(row_clean) >= 6:
                             kulup = row_clean[3]
                             ad_soyad = row_clean[4]
@@ -201,47 +203,51 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     max_text_width = int(W * 0.85)
 
     # 1. Ad Soyad
-    draw_multiline_autofit(
+    current_y = H * 0.40
+    current_y = draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
-        int(W * 0.070),
+        int(W * 0.062),
         max_text_width,
-        H * 0.41,
+        current_y,
         W / 2,
         "#000000",
     )
 
-    # 2. Rol / Görev
-    draw_multiline_autofit(
+    # 2. Rol / Görev (İsmin bittiği Y koordinatından devam eder)
+    current_y += int(H * 0.01)
+    current_y = draw_multiline_autofit(
         draw,
         f"- {rol} -",
-        int(W * 0.042),
+        int(W * 0.040),
         max_text_width,
-        H * 0.48,
+        current_y,
         W / 2,
         "#111111",
     )
 
     # 3. Kulüp
     if kulup:
-        draw_multiline_autofit(
+        current_y += int(H * 0.01)
+        current_y = draw_multiline_autofit(
             draw,
             kulup,
-            int(W * 0.033),
+            int(W * 0.032),
             max_text_width,
-            H * 0.54,
+            current_y,
             W / 2,
             "#222222",
         )
 
-    # 4. Kategoriler (Örn: BÜYÜK ERKEK / ORGANİK YAY)
+    # 4. Kategori
     if "Hakem" not in rol and kategori:
+        current_y += int(H * 0.01)
         draw_multiline_autofit(
             draw,
             kategori.upper(),
-            int(W * 0.040),
+            int(W * 0.038),
             max_text_width,
-            H * 0.62,
+            current_y,
             W / 2,
             "#000000",
         )
@@ -346,7 +352,6 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
                 is_hakem = "Hakem" in rol
                 is_antrenor = "Antrenör" in rol
 
-                # Kategori eşleşme kontrolü (birden fazla kategori içeriyorsa)
                 kategori_match = (
                     aktif_kategori == "Tüm Kategori ve Hakemler"
                     or (kisi_kategori and aktif_kategori in kisi_kategori)
@@ -431,7 +436,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 kategoriler = get_kategoriler()
                 st.write(kategoriler)
 
-        # TAB 2: TEKLİ EKLEME (ÇOKLU KATEGORİ VE HAKEM DESTEKLİ)
         with tab2:
             st.subheader("Yeni Katılımcı veya Hakem Kaydı")
             kategoriler = get_kategoriler()
@@ -454,9 +458,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 )
 
                 secilen_kategoriler = st.multiselect(
-                    "Kategori(ler) (Bir sporcu birden fazla kategoriye katılabilir):",
-                    kategoriler,
-                    default=[],
+                    "Kategori(ler):", kategoriler, default=[]
                 )
 
                 kulup = st.text_input("Kulüp Adı / İl:")
@@ -479,7 +481,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
-        # TAB 3: TOPLU YÜKLE
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
@@ -502,7 +503,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         cursor = conn.cursor()
                         eklenen_sayi = 0
 
-                        # Aynı kişi birden fazla kategoride var ise kategorilerini birleştirelim
                         grouped = (
                             df_parsed.groupby("ad_soyad")
                             .agg({
@@ -534,14 +534,13 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         conn.commit()
                         conn.close()
                         st.success(
-                            f"🎉 Toplam {eklenen_sayi} sporcu ve Organik Yay"
-                            " dahil kategoriler aktarıldı!"
+                            f"🎉 Toplam {eklenen_sayi} sporcu ve kategorileri"
+                            " aktarıldı!"
                         )
                         st.rerun()
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
-        # TAB 4: DÜZENLE / SİL
         with tab4:
             st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
@@ -638,13 +637,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("Silindi!")
                         st.rerun()
 
-        # TAB 5: KAYITLI LİSTE
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
-        # TAB 6: KART BASIMI
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
