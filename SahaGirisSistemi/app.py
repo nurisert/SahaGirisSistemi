@@ -11,7 +11,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 # --- YÖNETİCİ ŞİFRESİ AYARI ---
-ADMIN_PASSWORD = "151608Amasya"
+ADMIN_PASSWORD = "1234"
 DB_PATH = "yarisma.db"
 
 
@@ -125,7 +125,6 @@ def draw_multiline_autofit(
                         font=font,
                         anchor="mm",
                     )
-                # Çizilen son metnin Y koordinatını döndür
                 return start_y + (len(lines) * line_height)
         font_size -= 2
 
@@ -187,7 +186,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
 
-    # ARKA PLAN OKUNABİLİRLİK PERDESİ
+    # ARKA PLAN PERDESİ
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
@@ -214,7 +213,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#000000",
     )
 
-    # 2. Rol / Görev (İsmin bittiği Y koordinatından devam eder)
+    # 2. Rol / Görev
     current_y += int(H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
@@ -239,7 +238,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#222222",
         )
 
-    # 4. Kategori
+    # 4. Kategori (Örn: BÜYÜK ERKEK / ORGANİK YAY)
     if "Hakem" not in rol and kategori:
         current_y += int(H * 0.01)
         draw_multiline_autofit(
@@ -313,7 +312,7 @@ if st.session_state["admin_logged_in"]:
         st.rerun()
 
 # ==========================================
-# MENÜ 1: GİRİŞ KONTROLÜ (SAHA)
+# MENÜ 1: GİRİŞ KONTROLÜ (SAHA) - ÖZEL ÇAPRAZ İZİN MANTIĞI
 # ==========================================
 if sayfa == "📱 Giriş Kontrolü (Saha)":
     st.header("📱 Kapı Kontrol Ekranı")
@@ -321,7 +320,7 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
     kategoriler = get_kategoriler()
     aktif_kategori = st.selectbox(
         "🟢 Şu An Sahada Olan Aktif Kategori:",
-        ["Tüm Kategori ve Hakemler"] + kategoriler,
+        ["Tüm Kategori ve Görevliler"] + kategoriler,
     )
     st.info(f"**Aktif Kategori:** {aktif_kategori}")
 
@@ -349,15 +348,39 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
 
             if kisi:
                 ad_soyad, rol, kisi_kategori, kulup = kisi
-                is_hakem = "Hakem" in rol
-                is_antrenor = "Antrenör" in rol
 
-                kategori_match = (
-                    aktif_kategori == "Tüm Kategori ve Hakemler"
-                    or (kisi_kategori and aktif_kategori in kisi_kategori)
+                # 1. Hakem, Antrenör ve Görevliler HER ZAMAN girebilir.
+                is_vip_role = any(
+                    r in rol for r in ["Hakem", "Antrenör", "Görevli"]
                 )
 
-                if is_hakem or is_antrenor or kategori_match:
+                # 2. Sporcunun kategorilerini liste yapıyoruz (Örn: ['BÜYÜK ERKEK', 'ORGANİK YAY'])
+                sporcu_kategorileri = [
+                    k.strip() for k in str(kisi_kategori).split("/") if k.strip()
+                ]
+
+                # 3. ÖZEL İZİN KONTROLÜ:
+                # - Tüm Kişiler modu seçiliyse
+                # - VEYA Aktif kategori doğrudan sporcunun kategorileri arasındaysa
+                # - VEYA Sahada 'GENÇ ERKEK' varken sporcunun 'ORGANİK YAY' kategorisi varsa
+                # - VEYA Sahada 'ORGANİK YAY' varken sporcunun 'GENÇ ERKEK' kategorisi varsa
+                is_kategori_allowed = False
+
+                if aktif_kategori == "Tüm Kategori ve Görevliler":
+                    is_kategori_allowed = True
+                elif aktif_kategori in sporcu_kategorileri:
+                    is_kategori_allowed = True
+                elif (
+                    "GENÇ ERKEK" in aktif_kategori.upper()
+                    and "ORGANİK YAY" in [k.upper() for k in sporcu_kategorileri]
+                ):
+                    is_kategori_allowed = True
+                elif "ORGANİK YAY" in aktif_kategori.upper() and any(
+                    "GENÇ ERKEK" in k.upper() for k in sporcu_kategorileri
+                ):
+                    is_kategori_allowed = True
+
+                if is_vip_role or is_kategori_allowed:
                     st.success("### 🟩 GİRİŞ İZİNLİ!")
                     st.balloons()
                     st.markdown(f"""
