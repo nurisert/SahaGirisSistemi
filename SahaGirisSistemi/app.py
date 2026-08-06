@@ -11,7 +11,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
 # --- YÖNETİCİ ŞİFRESİ AYARI ---
-ADMIN_PASSWORD = "151608Amasya"
+ADMIN_PASSWORD = "1234"
 DB_PATH = "yarisma.db"
 
 
@@ -48,7 +48,11 @@ def get_kategoriler():
     conn = get_connection()
     df = pd.read_sql_query("SELECT ad FROM kategoriler", conn)
     conn.close()
-    return df["ad"].tolist()
+    kat_list = df["ad"].tolist()
+    # "Organik Yay" varsayılan olarak yoksa listeye ekleyelim
+    if "Organik Yay" not in kat_list:
+        kat_list.append("Organik Yay")
+    return kat_list
 
 
 def get_katilimcilar():
@@ -84,7 +88,7 @@ def draw_multiline_autofit(
     if not text:
         return
     font_size = initial_size
-    while font_size > 14:
+    while font_size > 12:
         font = load_scalable_font(font_size)
         words = text.split(" ")
         lines, current_line = [], []
@@ -123,7 +127,7 @@ def draw_multiline_autofit(
                 return
         font_size -= 2
 
-    font = load_scalable_font(14)
+    font = load_scalable_font(12)
     draw.text((center_x, start_y), text, fill=fill, font=font, anchor="mm")
 
 
@@ -134,7 +138,7 @@ def parse_pdf_participants(pdf_file):
             tables = page.extract_tables()
             for table in tables:
                 for row in table:
-                    if not row or len(row) < 5:
+                    if not row or len(row) < 4:
                         continue
                     row_clean = [
                         str(cell).strip().replace("\n", " ") if cell else ""
@@ -145,9 +149,18 @@ def parse_pdf_participants(pdf_file):
                     ):
                         continue
                     try:
-                        kulup = row_clean[3]
-                        ad_soyad = row_clean[4]
-                        kategori = row_clean[5] if len(row_clean) > 5 else ""
+                        # Tablo kolon tespiti
+                        if len(row_clean) >= 6:
+                            kulup = row_clean[3]
+                            ad_soyad = row_clean[4]
+                            kategori = row_clean[5]
+                        else:
+                            kulup = row_clean[2]
+                            ad_soyad = row_clean[3]
+                            kategori = (
+                                row_clean[4] if len(row_clean) > 4 else ""
+                            )
+
                         if ad_soyad and ad_soyad != "ADI SOYADI":
                             participants.append({
                                 "ad_soyad": ad_soyad,
@@ -168,15 +181,13 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         kart = Image.open(sablon_yolu).convert("RGBA")
     else:
         st.error("'sablon.png' dosyası bulunamadı!")
-        kart = Image.new("RGBA", (800, 1200), opacity=255, color="white")
+        kart = Image.new("RGBA", (800, 1200), color="white")
 
     W, H = kart.size
 
-    # --- OKUNABİLİRLİK İÇİN ŞEFFAF BEYAZ KUTU (PERDE) ---
+    # ARKA PLAN OKUNABİLİRLİK PERDESİ
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
-
-    # Metin bölgesini hafif beyazlatıyoruz (Opaklık: 210/255)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
     rect_x2, rect_y2 = int(W * 0.95), int(H * 0.67)
     overlay_draw.rounded_rectangle(
@@ -185,12 +196,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         fill=(255, 255, 255, 215),
     )
 
-    # Perdeyi kartın üzerine birleştiriyoruz
     kart = Image.alpha_composite(kart, overlay).convert("RGB")
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # METİNLER (Artık tam okunaklı)
+    # 1. Ad Soyad
     draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
@@ -200,6 +210,8 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         W / 2,
         "#000000",
     )
+
+    # 2. Rol / Görev
     draw_multiline_autofit(
         draw,
         f"- {rol} -",
@@ -210,6 +222,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#111111",
     )
 
+    # 3. Kulüp
     if kulup:
         draw_multiline_autofit(
             draw,
@@ -221,12 +234,12 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#222222",
         )
 
-    is_only_antrenor = rol.strip().lower() == "antrenör"
-    if not is_only_antrenor and kategori:
+    # 4. Kategoriler (Örn: BÜYÜK ERKEK / ORGANİK YAY)
+    if "Hakem" not in rol and kategori:
         draw_multiline_autofit(
             draw,
             kategori.upper(),
-            int(W * 0.042),
+            int(W * 0.040),
             max_text_width,
             H * 0.62,
             W / 2,
@@ -300,67 +313,66 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
     st.header("📱 Kapı Kontrol Ekranı")
 
     kategoriler = get_kategoriler()
-    if not kategoriler:
-        st.warning(
-            "Henüz tanımlı kategori yok. Lütfen önce Yönetim Panelinden"
-            " kategori ekleyin."
-        )
-    else:
-        aktif_kategori = st.selectbox(
-            "🟢 Şu An Sahada Olan Aktif Kategori:", kategoriler
-        )
-        st.info(f"**Aktif Kategori:** {aktif_kategori}")
+    aktif_kategori = st.selectbox(
+        "🟢 Şu An Sahada Olan Aktif Kategori:",
+        ["Tüm Kategori ve Hakemler"] + kategoriler,
+    )
+    st.info(f"**Aktif Kategori:** {aktif_kategori}")
 
-        st.subheader("📷 QR Kod Okutun")
-        img_file = st.camera_input("Kamerayı QR Koda Tutun ve Çekin")
+    st.subheader("📷 QR Kod Okutun")
+    img_file = st.camera_input("Kamerayı QR Koda Tutun ve Çekin")
 
-        if img_file is not None:
-            bytes_data = img_file.getvalue()
-            cv_img = cv2.imdecode(
-                np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
+    if img_file is not None:
+        bytes_data = img_file.getvalue()
+        cv_img = cv2.imdecode(
+            np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR
+        )
+        detector = cv2.QRCodeDetector()
+        qr_data, bbox, _ = detector.detectAndDecode(cv_img)
+
+        if qr_data:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar"
+                " WHERE qr_code = ?",
+                (qr_data,),
             )
-            detector = cv2.QRCodeDetector()
-            qr_data, bbox, _ = detector.detectAndDecode(cv_img)
+            kisi = cursor.fetchone()
+            conn.close()
 
-            if qr_data:
-                conn = get_connection()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar"
-                    " WHERE qr_code = ?",
-                    (qr_data,),
+            if kisi:
+                ad_soyad, rol, kisi_kategori, kulup = kisi
+                is_hakem = "Hakem" in rol
+                is_antrenor = "Antrenör" in rol
+
+                # Kategori eşleşme kontrolü (birden fazla kategori içeriyorsa)
+                kategori_match = (
+                    aktif_kategori == "Tüm Kategori ve Hakemler"
+                    or (kisi_kategori and aktif_kategori in kisi_kategori)
                 )
-                kisi = cursor.fetchone()
-                conn.close()
 
-                if kisi:
-                    ad_soyad, rol, kisi_kategori, kulup = kisi
-                    is_only_antrenor = rol.strip().lower() == "antrenör"
-
-                    if is_only_antrenor or (kisi_kategori == aktif_kategori):
-                        st.success("### 🟩 GİRİŞ İZİNLİ!")
-                        st.balloons()
-                        st.markdown(f"""
-                        * **Ad Soyad:** {ad_soyad}
-                        * **Görevi / Rol:** {rol}
-                        * **Kategori:** {kisi_kategori if kisi_kategori else 'Genel / Antrenör'}
-                        * **Kulüp:** {kulup if kulup else '-'}
-                        """)
-                    else:
-                        st.error("### 🟥 GİRİŞ YASAK! (YANLIŞ KATEGORİ)")
-                        st.markdown(f"""
-                        * **Ad Soyad:** {ad_soyad}
-                        * **Görevi:** {rol}
-                        * **Sporcunun Kategorisi:** {kisi_kategori}
-                        * **Sahadaki Aktif Kategori:** {aktif_kategori}
-                        """)
+                if is_hakem or is_antrenor or kategori_match:
+                    st.success("### 🟩 GİRİŞ İZİNLİ!")
+                    st.balloons()
+                    st.markdown(f"""
+                    * **Ad Soyad:** {ad_soyad}
+                    * **Görevi / Rol:** {rol}
+                    * **Kategori:** {kisi_kategori if kisi_kategori else 'Genel / Hakem / Görevli'}
+                    * **Kulüp:** {kulup if kulup else '-'}
+                    """)
                 else:
-                    st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
+                    st.error("### 🟥 GİRİŞ YASAK! (YANLIŞ KATEGORİ)")
+                    st.markdown(f"""
+                    * **Ad Soyad:** {ad_soyad}
+                    * **Görevi:** {rol}
+                    * **Sporcunun Kategorisi:** {kisi_kategori}
+                    * **Sahadaki Aktif Kategori:** {aktif_kategori}
+                    """)
             else:
-                st.warning(
-                    "Görselde QR kod tespit edilemedi. Lütfen QR kodu net tutup"
-                    " tekrar çekin."
-                )
+                st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
+        else:
+            st.warning("Görselde QR kod tespit edilemedi.")
 
 # ==========================================
 # MENÜ 2: YÖNETİM PANELİ
@@ -381,13 +393,13 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     st.success("Giriş Başarılı!")
                     st.rerun()
                 else:
-                    st.error("❌ Hatalı Şifre! Lütfen tekrar deneyin.")
+                    st.error("❌ Hatalı Şifre!")
     else:
         tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "🏷️ Kategori Yönetimi",
-            "Katılımcı Ekle",
-            "📄 Toplu Yükle",
-            "✏️ Katılımcı Düzenle / Sil",
+            "Katılımcı / Hakem Ekle",
+            "📄 Toplu Yükle (PDF)",
+            "✏️ Düzenle / Sil",
             "📋 Kayıtlı Liste",
             "🪪 Yaka Kartı Bas (Tekli/Toplu)",
         ])
@@ -397,7 +409,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
             col_kat1, col_kat2 = st.columns([1, 1])
             with col_kat1:
                 st.markdown("#### ➕ Yeni Kategori Ekle")
-                yeni_kat = st.text_input("Kategori Adı:")
+                yeni_kat = st.text_input("Kategori Adı (Örn: Organik Yay):")
                 if st.button("Kategoriyi Kaydet"):
                     if yeni_kat:
                         try:
@@ -413,75 +425,46 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             st.rerun()
                         except sqlite3.IntegrityError:
                             st.error("Bu kategori zaten mevcut!")
-                    else:
-                        st.warning("Lütfen kategori adı girin.")
 
             with col_kat2:
-                st.markdown("#### 🗑️ Kayıtlı Kategorileri Sil / Düzenle")
+                st.markdown("#### 🗑️ Kayıtlı Kategoriler")
                 kategoriler = get_kategoriler()
-                if not kategoriler:
-                    st.info("Henüz kayıtlı kategori bulunmuyor.")
-                else:
-                    secilen_kat = st.selectbox(
-                        "İşlem Yapılacak Kategoriyi Seçin:", kategoriler
-                    )
-                    düzeltilmis_kat = st.text_input(
-                        "Seçili Kategorinin Adını Güncelle:", value=secilen_kat
-                    )
-                    c_btn1, c_btn2 = st.columns([1, 1])
-                    with c_btn1:
-                        if st.button("✏️ Kategoriyi Güncelle"):
-                            if düzeltilmis_kat.strip():
-                                conn = get_connection()
-                                cursor = conn.cursor()
-                                cursor.execute(
-                                    "UPDATE kategoriler SET ad = ? WHERE ad ="
-                                    " ?",
-                                    (düzeltilmis_kat.strip(), secilen_kat),
-                                )
-                                cursor.execute(
-                                    "UPDATE katilimcilar SET kategori_ad = ?"
-                                    " WHERE kategori_ad = ?",
-                                    (düzeltilmis_kat.strip(), secilen_kat),
-                                )
-                                conn.commit()
-                                conn.close()
-                                st.success("Kategori adı güncellendi!")
-                                st.rerun()
-                    with c_btn2:
-                        if st.button("❌ Kategoriyi Sil", type="primary"):
-                            conn = get_connection()
-                            cursor = conn.cursor()
-                            cursor.execute(
-                                "DELETE FROM kategoriler WHERE ad = ?",
-                                (secilen_kat,),
-                            )
-                            conn.commit()
-                            conn.close()
-                            st.success(
-                                f"'{secilen_kat}' kategorisi silindi!"
-                            )
-                            st.rerun()
+                st.write(kategoriler)
 
+        # TAB 2: TEKLİ EKLEME (ÇOKLU KATEGORİ VE HAKEM DESTEKLİ)
         with tab2:
-            st.subheader("Yeni Katılımcı Kaydı")
+            st.subheader("Yeni Katılımcı veya Hakem Kaydı")
             kategoriler = get_kategoriler()
             with st.form("katilimci_form"):
-                qr_id = st.text_input("QR Kod ID:")
+                qr_id = st.text_input("QR Kod ID (Örn: HKM-101 veya SPOR-101):")
                 ad_soyad = st.text_input("Ad Soyad:")
-                roller = st.multiselect(
-                    "Görevi:",
-                    ["Sporcu", "Antrenör", "Görevli"],
+
+                rol_secimi = st.multiselect(
+                    "Görevi / Rolü:",
+                    [
+                        "Sporcu",
+                        "Antrenör",
+                        "Hakem - Baş Hakem",
+                        "Hakem - İdari Hakem",
+                        "Hakem - Masa Hakemi",
+                        "Hakem",
+                        "Görevli",
+                    ],
                     default=["Sporcu"],
                 )
-                kategori = st.selectbox(
-                    "Kategori:", ["-"] + kategoriler if kategoriler else ["-"]
+
+                secilen_kategoriler = st.multiselect(
+                    "Kategori(ler) (Bir sporcu birden fazla kategoriye katılabilir):",
+                    kategoriler,
+                    default=[],
                 )
-                kulup = st.text_input("Kulüp Adı:")
+
+                kulup = st.text_input("Kulüp Adı / İl:")
                 submit = st.form_submit_button("Kaydet")
+
                 if submit and qr_id and ad_soyad:
-                    rol_str = " / ".join(roller)
-                    kat_str = kategori if kategori != "-" else ""
+                    rol_str = " / ".join(rol_secimi)
+                    kat_str = " / ".join(secilen_kategoriler)
                     try:
                         conn = get_connection()
                         cursor = conn.cursor()
@@ -491,137 +474,136 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         )
                         conn.commit()
                         conn.close()
-                        st.success(f"'{ad_soyad}' kaydedildi!")
+                        st.success(f"'{ad_soyad}' başarıyla kaydedildi!")
                         st.rerun()
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
+        # TAB 3: TOPLU YÜKLE
         with tab3:
-            st.subheader("📄 PDF veya Excel Dosyasından Doğrudan Yükle")
+            st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
-                "Katılımcı Listesi Dosyasını Seçin (PDF, XLSX, CSV)",
-                type=["pdf", "xlsx", "csv"],
+                "Katılımcı Listesi PDF'ini Seçin", type=["pdf", "xlsx", "csv"]
             )
             if uploaded_file is not None:
                 try:
                     if uploaded_file.name.endswith(".pdf"):
                         df_parsed = parse_pdf_participants(uploaded_file)
-                    elif uploaded_file.name.endswith(".csv"):
-                        df_parsed = pd.read_csv(uploaded_file)
                     else:
                         df_parsed = pd.read_excel(uploaded_file)
 
-                    st.write("📋 Okunan Liste Önizlemesi:", df_parsed.head(10))
+                    st.write("📋 Okunan Liste Önizlemesi:", df_parsed.head(15))
                     st.info(
                         f"Tespit Edilen Toplam Sporcu Sayısı: {len(df_parsed)}"
                     )
 
-                    if st.button("🚀 Tüm Sporcuları Otomatik Aktar"):
+                    if st.button("🚀 Tüm Sporcuları ve Kategorileri Aktar"):
                         conn = get_connection()
                         cursor = conn.cursor()
                         eklenen_sayi = 0
-                        for idx, row in df_parsed.iterrows():
-                            ad_soyad = str(
-                                row.get("ad_soyad", row.get("ADI SOYADI", ""))
-                            ).strip()
-                            kulup = str(
-                                row.get("kulup", row.get("KULÜB ADI", ""))
-                            ).strip()
-                            kategori = str(
-                                row.get("kategori", row.get("KATEGORİ ADI", ""))
-                            ).strip()
+
+                        # Aynı kişi birden fazla kategoride var ise kategorilerini birleştirelim
+                        grouped = (
+                            df_parsed.groupby("ad_soyad")
+                            .agg({
+                                "kulup": "first",
+                                "kategori": lambda x: " / ".join(
+                                    set([str(i) for i in x if i])
+                                ),
+                            })
+                            .reset_index()
+                        )
+
+                        for idx, row in grouped.iterrows():
+                            ad_soyad = row["ad_soyad"]
+                            kulup = row["kulup"]
+                            kategori = row["kategori"]
                             qr_id = f"SPOR-{1000 + idx}"
 
-                            if (
-                                ad_soyad
-                                and ad_soyad != "None"
-                                and ad_soyad != ""
-                            ):
-                                if kategori and kategori != "None":
-                                    cursor.execute(
-                                        "INSERT OR IGNORE INTO kategoriler"
-                                        " (ad) VALUES (?)",
-                                        (kategori,),
-                                    )
-                                cursor.execute(
-                                    """
-                                    INSERT OR REPLACE INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
-                                    VALUES (?, ?, ?, ?, ?)
-                                """,
-                                    (
-                                        qr_id,
-                                        ad_soyad,
-                                        "Sporcu",
-                                        kategori,
-                                        kulup,
-                                    ),
-                                )
-                                eklenen_sayi += 1
+                            cursor.execute(
+                                """
+                                INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
+                                VALUES (?, ?, ?, ?, ?)
+                                ON CONFLICT(qr_code) DO UPDATE SET
+                                kategori_ad = excluded.kategori_ad
+                            """,
+                                (qr_id, ad_soyad, "Sporcu", kategori, kulup),
+                            )
+                            eklenen_sayi += 1
+
                         conn.commit()
                         conn.close()
                         st.success(
-                            f"🎉 Toplam {eklenen_sayi} sporcu ve kategorileri"
-                            " eklendi!"
+                            f"🎉 Toplam {eklenen_sayi} sporcu ve Organik Yay"
+                            " dahil kategoriler aktarıldı!"
                         )
                         st.rerun()
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
+        # TAB 4: DÜZENLE / SİL
         with tab4:
-            st.subheader("✏️ Katılımcı Bilgisi Güncelleme veya Kayıt Silme")
+            st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
             kategoriler = get_kategoriler()
+
             if df_katilimcilar.empty:
-                st.info("Düzenlenecek veya silinecek katılımcı yok.")
+                st.info("Kayıtlı kişi bulunmuyor.")
             else:
                 secilen_qr = st.selectbox(
-                    "Düzenlemek veya Silmek İstediğiniz Katılımcıyı Seçin:",
+                    "İşlem Yapılacak Kişiyi Seçin:",
                     options=df_katilimcilar["qr_code"].tolist(),
-                    format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} ({df_katilimcilar[df_katilimcilar['qr_code'] == x]['kategori_ad'].values[0]}) - [{x}]",
+                    format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} - [{x}]",
                 )
                 kisi = df_katilimcilar[
                     df_katilimcilar["qr_code"] == secilen_qr
                 ].iloc[0]
+
                 col1, col2 = st.columns([2, 1])
                 with col1:
-                    st.markdown("#### ✏️ Bilgileri Düzenle")
                     with st.form("edit_form"):
                         yeni_ad = st.text_input(
                             "Ad Soyad:", value=kisi["ad_soyad"]
                         )
+
                         mevcut_roller = [
-                            r.strip()
-                            for r in kisi["rol"].split("/")
-                            if r.strip() in ["Sporcu", "Antrenör", "Görevli"]
+                            r.strip() for r in kisi["rol"].split("/")
                         ]
                         yeni_roller = st.multiselect(
                             "Görevi:",
-                            ["Sporcu", "Antrenör", "Görevli"],
-                            default=(
-                                mevcut_roller if mevcut_roller else ["Sporcu"]
-                            ),
+                            [
+                                "Sporcu",
+                                "Antrenör",
+                                "Hakem - Baş Hakem",
+                                "Hakem - İdari Hakem",
+                                "Hakem - Masa Hakemi",
+                                "Hakem",
+                                "Görevli",
+                            ],
+                            default=mevcut_roller,
                         )
-                        kat_index = (
-                            kategoriler.index(kisi["kategori_ad"])
-                            if kisi["kategori_ad"] in kategoriler
-                            else 0
+
+                        mevcut_kategoriler = [
+                            k.strip()
+                            for k in str(kisi["kategori_ad"]).split("/")
+                            if k.strip() in kategoriler
+                        ]
+                        yeni_kategoriler = st.multiselect(
+                            "Kategoriler:",
+                            kategoriler,
+                            default=mevcut_kategoriler,
                         )
-                        yeni_kategori = st.selectbox(
-                            "Kategori:",
-                            ["-"] + kategoriler if kategoriler else ["-"],
-                            index=kat_index + 1 if kategoriler else 0,
-                        )
+
                         yeni_kulup = st.text_input(
-                            "Kulüp:", value=kisi["kulup"]
+                            "Kulüp / İl:", value=kisi["kulup"]
                         )
                         btn_update = st.form_submit_button(
                             "💾 Değişiklikleri Kaydet"
                         )
+
                         if btn_update:
                             rol_str = " / ".join(yeni_roller)
-                            kat_str = (
-                                yeni_kategori if yeni_kategori != "-" else ""
-                            )
+                            kat_str = " / ".join(yeni_kategoriler)
                             conn = get_connection()
                             cursor = conn.cursor()
                             cursor.execute(
@@ -640,16 +622,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             conn.commit()
                             conn.close()
-                            st.success("✅ Katılımcı bilgileri güncellendi!")
+                            st.success("✅ Güncellendi!")
                             st.rerun()
 
                 with col2:
-                    st.markdown("#### 🗑️ Kaydı Sil")
-                    st.warning(
-                        f"**{kisi['ad_soyad']}** kişisini sistemden silmek"
-                        " üzeresiniz."
-                    )
-                    if st.button("❌ Bu Katılımcıyı Sil", type="primary"):
+                    if st.button("❌ Bu Kaydı Sil", type="primary"):
                         conn = get_connection()
                         cursor = conn.cursor()
                         cursor.execute(
@@ -658,70 +635,62 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         )
                         conn.commit()
                         conn.close()
-                        st.success("🗑️ Kayıt başarıyla silindi!")
+                        st.success("Silindi!")
                         st.rerun()
 
+        # TAB 5: KAYITLI LİSTE
         with tab5:
-            st.subheader("📋 Kayıtlı Katılımcı Listesi")
+            st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
-            if not df_katilimcilar.empty:
-                st.dataframe(df_katilimcilar, use_container_width=True)
-                st.info(f"Toplam Kayıtlı Kişi Sayısı: {len(df_katilimcilar)}")
-            else:
-                st.info("Henüz kayıtlı katılımcı bulunmuyor.")
+            st.dataframe(df_katilimcilar, use_container_width=True)
 
+        # TAB 6: KART BASIMI
         with tab6:
-            st.subheader("🪪 Basıma Hazır Yaka Kartı Oluşturucu")
+            st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
             kategoriler = get_kategoriler()
-            if df_katilimcilar.empty:
-                st.info("Sistemde henüz kayıtlı katılımcı yok.")
-            else:
-                with st.expander(
-                    "📦 TOPLU YAKA KARTI İNDİR (ZIP)", expanded=True
-                ):
-                    c_zip1, c_zip2 = st.columns([1, 1])
-                    with c_zip1:
-                        filtre_kat = st.selectbox(
-                            "İndirilecek Kategori Filtresi:",
-                            ["Tüm Katılımcılar"] + kategoriler,
-                        )
-                    with c_zip2:
-                        st.write("")
-                        st.write("")
-                        if filtre_kat == "Tüm Katılımcılar":
-                            df_target = df_katilimcilar
-                            filename_zip = "TUM_YAKA_KARTLARI.zip"
-                        else:
-                            df_target = df_katilimcilar[
-                                df_katilimcilar["kategori_ad"] == filtre_kat
-                            ]
-                            filename_zip = f"{filtre_kat.replace(' ', '_')}_YAKA_KARTLARI.zip"
 
-                        if not df_target.empty:
-                            zip_bytes = generate_zip_of_cards(df_target)
-                            st.download_button(
-                                label=(
-                                    f"📦 {len(df_target)} Adet Kartı ZIP Olarak"
-                                    " İndir"
-                                ),
-                                data=zip_bytes,
-                                file_name=filename_zip,
-                                mime="application/zip",
+            if not df_katilimcilar.empty:
+                with st.expander("📦 TOPLU YAKA KARTI İNDİR (ZIP)"):
+                    filtre = st.selectbox(
+                        "İndirme Filtresi:",
+                        ["Tüm Kişiler", "Sadece Hakemler"] + kategoriler,
+                    )
+                    if filtre == "Tüm Kişiler":
+                        df_target = df_katilimcilar
+                    elif filtre == "Sadece Hakemler":
+                        df_target = df_katilimcilar[
+                            df_katilimcilar["rol"].str.contains("Hakem")
+                        ]
+                    else:
+                        df_target = df_katilimcilar[
+                            df_katilimcilar["kategori_ad"].str.contains(
+                                filtre, na=False
                             )
-                        else:
-                            st.warning("Seçilen kategoride sporcu bulunamadı.")
+                        ]
+
+                    if not df_target.empty:
+                        zip_bytes = generate_zip_of_cards(df_target)
+                        st.download_button(
+                            label=(
+                                f"📦 {len(df_target)} Adet Kartı ZIP Olarak İndir"
+                            ),
+                            data=zip_bytes,
+                            file_name=f"{filtre.replace(' ', '_')}_Kartlar.zip",
+                            mime="application/zip",
+                        )
 
                 st.divider()
-                st.markdown("#### 👤 Tekli Kart Önizleme & İndirme")
+                st.markdown("#### 👤 Tekli Kart Önizleme")
                 secilen_kisi_qr = st.selectbox(
-                    "Yaka Kartı Basılacak Katılımcıyı Seçin:",
+                    "Basılacak Kişiyi Seçin:",
                     options=df_katilimcilar["qr_code"].tolist(),
-                    format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} ({df_katilimcilar[df_katilimcilar['qr_code'] == x]['kategori_ad'].values[0]}) - [{x}]",
+                    format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} ({df_katilimcilar[df_katilimcilar['qr_code'] == x]['rol'].values[0]}) - [{x}]",
                 )
                 kisi_bilgisi = df_katilimcilar[
                     df_katilimcilar["qr_code"] == secilen_kisi_qr
                 ].iloc[0]
+
                 kart_bytes = yaka_karti_olustur(
                     ad_soyad=kisi_bilgisi["ad_soyad"],
                     rol=kisi_bilgisi["rol"],
@@ -729,6 +698,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     kulup=kisi_bilgisi["kulup"],
                     qr_data=kisi_bilgisi["qr_code"],
                 )
+
                 col1, col2 = st.columns([1, 1])
                 with col1:
                     st.image(
@@ -738,7 +708,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     )
                 with col2:
                     st.download_button(
-                        label="📥 Tekli Yaka Kartını İndir (PNG)",
+                        label="📥 Kartı İndir (PNG)",
                         data=kart_bytes,
                         file_name=f"YakaKarti_{kisi_bilgisi['ad_soyad'].replace(' ', '_')}.png",
                         mime="image/png",
