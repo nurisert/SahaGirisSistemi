@@ -440,122 +440,120 @@ elif sayfa == "⚙️ Yönetim Paneli":
             "🪪 Yaka Kartı Bas (Tekli/Toplu)",
         ])
 
-        # ==========================================
-        # TAB 1: KATEGORİ YÖNETİMİ (EKLE / DÜZENLE / SİL)
-        # ==========================================
-       with tab1:
-    st.subheader("🏷️ Kategori Ekle, Düzenle & Sil")
-    col_kat1, col_kat2 = st.columns([1, 1])
+        # TAB 1: KATEGORİ YÖNETİMİ
+        with tab1:
+            st.subheader("🏷️ Kategori Ekle, Düzenle & Sil")
+            col_kat1, col_kat2 = st.columns([1, 1])
 
-    with col_kat1:
-        st.markdown("#### ➕ Yeni Kategori Ekle")
-        yeni_kat = st.text_input("Yeni Kategori Adı:")
-        if st.button("Kategoriyi Kaydet"):
-            if yeni_kat.strip():
-                try:
-                    conn = get_connection()
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "INSERT INTO kategoriler (ad) VALUES (?)",
-                        (yeni_kat.strip(),),
-                    )
-                    conn.commit()
-                    conn.close()
-                    st.cache_data.clear()
-                    st.success(f"'{yeni_kat.strip()}' eklendi!")
-                    st.rerun()
-                except sqlite3.IntegrityError:
-                    st.error("Bu kategori zaten mevcut!")
-            else:
-                st.warning("Lütfen bir kategori adı girin.")
-
-    with col_kat2:
-        st.markdown("#### ✏️ Kategoriyi Düzenle / 🗑️ Sil")
-        kategoriler = get_kategoriler()
-        if not kategoriler:
-            st.info("Henüz ekli bir kategori yok.")
-        else:
-            secilen_kat = st.selectbox(
-                "İşlem Yapılacak Kategoriyi Seçin:", kategoriler
-            )
-            guncel_kat_adi = st.text_input(
-                "Kategori Adını Güncelle:", value=secilen_kat
-            )
-
-            c_btn1, c_btn2 = st.columns([1, 1])
-
-            with c_btn1:
-                if st.button("✏️ İsmini Güncelle"):
-                    if guncel_kat_adi.strip():
-                        conn = get_connection()
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "UPDATE kategoriler SET ad = ? WHERE ad = ?",
-                            (guncel_kat_adi.strip(), secilen_kat),
-                        )
-
-                        # Katılımcıların üzerindeki eski kategori ismini güncelle
-                        cursor.execute(
-                            "SELECT qr_code, kategori_ad FROM katilimcilar"
-                            " WHERE kategori_ad LIKE ?",
-                            (f"%{secilen_kat}%",),
-                        )
-                        rows = cursor.fetchall()
-                        for qr_c, kat_text in rows:
-                            yeni_text = kat_text.replace(
-                                secilen_kat, guncel_kat_adi.strip()
-                            )
+            with col_kat1:
+                st.markdown("#### ➕ Yeni Kategori Ekle")
+                yeni_kat = st.text_input("Yeni Kategori Adı:")
+                if st.button("Kategoriyi Kaydet"):
+                    if yeni_kat.strip():
+                        try:
+                            conn = get_connection()
+                            cursor = conn.cursor()
                             cursor.execute(
-                                "UPDATE katilimcilar SET kategori_ad = ? WHERE"
-                                " qr_code = ?",
-                                (yeni_text, qr_c),
+                                "INSERT INTO kategoriler (ad) VALUES (?)",
+                                (yeni_kat.strip(),),
+                            )
+                            conn.commit()
+                            conn.close()
+                            st.cache_data.clear()
+                            st.success(f"'{yeni_kat.strip()}' eklendi!")
+                            st.rerun()
+                        except sqlite3.IntegrityError:
+                            st.error("Bu kategori zaten mevcut!")
+                    else:
+                        st.warning("Lütfen bir kategori adı girin.")
+
+            with col_kat2:
+                st.markdown("#### ✏️ Kategoriyi Düzenle / 🗑️ Sil")
+                kategoriler = get_kategoriler()
+                if not kategoriler:
+                    st.info("Henüz ekli bir kategori yok.")
+                else:
+                    secilen_kat = st.selectbox(
+                        "İşlem Yapılacak Kategoriyi Seçin:", kategoriler
+                    )
+                    guncel_kat_adi = st.text_input(
+                        "Kategori Adını Güncelle:", value=secilen_kat
+                    )
+
+                    c_btn1, c_btn2 = st.columns([1, 1])
+
+                    with c_btn1:
+                        if st.button("✏️ İsmini Güncelle"):
+                            if guncel_kat_adi.strip():
+                                conn = get_connection()
+                                cursor = conn.cursor()
+                                cursor.execute(
+                                    "UPDATE kategoriler SET ad = ? WHERE ad ="
+                                    " ?",
+                                    (guncel_kat_adi.strip(), secilen_kat),
+                                )
+
+                                cursor.execute(
+                                    "SELECT qr_code, kategori_ad FROM"
+                                    " katilimcilar WHERE kategori_ad LIKE ?",
+                                    (f"%{secilen_kat}%",),
+                                )
+                                rows = cursor.fetchall()
+                                for qr_c, kat_text in rows:
+                                    yeni_text = kat_text.replace(
+                                        secilen_kat, guncel_kat_adi.strip()
+                                    )
+                                    cursor.execute(
+                                        "UPDATE katilimcilar SET kategori_ad ="
+                                        " ? WHERE qr_code = ?",
+                                        (yeni_text, qr_c),
+                                    )
+
+                                conn.commit()
+                                conn.close()
+                                st.cache_data.clear()
+                                st.success("Kategori güncellendi!")
+                                st.rerun()
+
+                    with c_btn2:
+                        if st.button("❌ Kategoriyi Sil", type="primary"):
+                            conn = get_connection()
+                            cursor = conn.cursor()
+
+                            cursor.execute(
+                                "DELETE FROM kategoriler WHERE ad = ?",
+                                (secilen_kat,),
                             )
 
-                        conn.commit()
-                        conn.close()
-                        st.cache_data.clear()
-                        st.success("Kategori güncellendi!")
-                        st.rerun()
+                            cursor.execute(
+                                "SELECT qr_code, kategori_ad FROM katilimcilar"
+                                " WHERE kategori_ad LIKE ?",
+                                (f"%{secilen_kat}%",),
+                            )
+                            rows = cursor.fetchall()
+                            for qr_c, kat_text in rows:
+                                kategori_listesi = [
+                                    k.strip()
+                                    for k in kat_text.split("/")
+                                    if k.strip() != secilen_kat
+                                ]
+                                yeni_text = " / ".join(kategori_listesi)
+                                cursor.execute(
+                                    "UPDATE katilimcilar SET kategori_ad = ?"
+                                    " WHERE qr_code = ?",
+                                    (yeni_text, qr_c),
+                                )
 
-            with c_btn2:
-                if st.button("❌ Kategoriyi Sil", type="primary"):
-                    conn = get_connection()
-                    cursor = conn.cursor()
+                            conn.commit()
+                            conn.close()
 
-                    # 1. Kategori tablosundan sil
-                    cursor.execute(
-                        "DELETE FROM kategoriler WHERE ad = ?", (secilen_kat,)
-                    )
+                            st.cache_data.clear()
+                            st.success(
+                                f"'{secilen_kat}' kategorisi başarıyla silindi!"
+                            )
+                            st.rerun()
 
-                    # 2. Katılımcılardaki bu kategori bilgisini temizle
-                    cursor.execute(
-                        "SELECT qr_code, kategori_ad FROM katilimcilar WHERE"
-                        " kategori_ad LIKE ?",
-                        (f"%{secilen_kat}%",),
-                    )
-                    rows = cursor.fetchall()
-                    for qr_c, kat_text in rows:
-                        # Çoklu kategorilerdeki '/ ' temizliğini yap
-                        kategori_listesi = [
-                            k.strip()
-                            for k in kat_text.split("/")
-                            if k.strip() != secilen_kat
-                        ]
-                        yeni_text = " / ".join(kategori_listesi)
-                        cursor.execute(
-                            "UPDATE katilimcilar SET kategori_ad = ? WHERE"
-                            " qr_code = ?",
-                            (yeni_text, qr_c),
-                        )
-
-                    conn.commit()
-                    conn.close()
-
-                    # 3. Önbelleği temizle ve sayfayı yenile
-                    st.cache_data.clear()
-                    st.success(f"'{secilen_kat}' kategorisi başarıyla silindi!")
-                    st.rerun()
-
+        # TAB 2: KATILIMCI SİL/EKLE
         with tab2:
             st.subheader("Yeni Katılımcı veya Hakem Kaydı")
             kategoriler = get_kategoriler()
@@ -602,6 +600,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
+        # TAB 3: PDF TOPLU
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
@@ -671,6 +670,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
+        # TAB 4: DÜZENLE / SİL
         with tab4:
             st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
@@ -769,11 +769,13 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("Silindi!")
                         st.rerun()
 
+        # TAB 5: LİSTE
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
+        # TAB 6: BASIM
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
