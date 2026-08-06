@@ -38,17 +38,20 @@ def init_db():
         )
     """)
 
-    varsayilan_kategoriler = [
-        "Büyük Erkek",
-        "Büyük Kadın",
-        "Genç Erkek",
-        "Genç Kadın",
-        "Organik Yay",
-    ]
-    for kat in varsayilan_kategoriler:
-        cursor.execute(
-            "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)", (kat,)
-        )
+    # İLK AÇILIŞTA EĞER HİÇ KATEGORİ YOKSA SADECE 1 KERE EKLESİN
+    cursor.execute("SELECT COUNT(*) FROM kategoriler")
+    if cursor.fetchone()[0] == 0:
+        varsayilan_kategoriler = [
+            "Büyük Erkek",
+            "Büyük Kadın",
+            "Genç Erkek",
+            "Genç Kadın",
+            "Organik Yay",
+        ]
+        for kat in varsayilan_kategoriler:
+            cursor.execute(
+                "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)", (kat,)
+            )
 
     conn.commit()
     conn.close()
@@ -61,16 +64,7 @@ def get_kategoriler():
     conn = get_connection()
     df = pd.read_sql_query("SELECT ad FROM kategoriler", conn)
     conn.close()
-    kat_list = df["ad"].tolist()
-    if not kat_list:
-        kat_list = [
-            "Büyük Erkek",
-            "Büyük Kadın",
-            "Genç Erkek",
-            "Genç Kadın",
-            "Organik Yay",
-        ]
-    return kat_list
+    return df["ad"].tolist()
 
 
 def get_katilimcilar():
@@ -549,11 +543,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
 
                             st.cache_data.clear()
                             st.success(
-                                f"'{secilen_kat}' kategorisi başarıyla silindi!"
+                                f"'{secilen_kat}' kategorisi kalıcı olarak"
+                                " silindi!"
                             )
                             st.rerun()
 
-        # TAB 2: KATILIMCI SİL/EKLE
         with tab2:
             st.subheader("Yeni Katılımcı veya Hakem Kaydı")
             kategoriler = get_kategoriler()
@@ -600,7 +594,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
-        # TAB 3: PDF TOPLU
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
@@ -670,7 +663,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
-        # TAB 4: DÜZENLE / SİL
         with tab4:
             st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
@@ -769,13 +761,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("Silindi!")
                         st.rerun()
 
-        # TAB 5: LİSTE
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
-        # TAB 6: BASIM
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
