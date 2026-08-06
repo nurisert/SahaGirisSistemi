@@ -37,6 +37,19 @@ def init_db():
             kulup TEXT
         )
     """)
+
+    varsayilan_kategoriler = [
+        "Büyük Erkek",
+        "Büyük Kadın",
+        "Genç Erkek",
+        "Genç Kadın",
+        "Organik Yay",
+    ]
+    for kat in varsayilan_kategoriler:
+        cursor.execute(
+            "INSERT OR IGNORE INTO kategoriler (ad) VALUES (?)", (kat,)
+        )
+
     conn.commit()
     conn.close()
 
@@ -49,8 +62,14 @@ def get_kategoriler():
     df = pd.read_sql_query("SELECT ad FROM kategoriler", conn)
     conn.close()
     kat_list = df["ad"].tolist()
-    if "Organik Yay" not in kat_list:
-        kat_list.append("Organik Yay")
+    if not kat_list:
+        kat_list = [
+            "Büyük Erkek",
+            "Büyük Kadın",
+            "Genç Erkek",
+            "Genç Kadın",
+            "Organik Yay",
+        ]
     return kat_list
 
 
@@ -81,7 +100,6 @@ def load_scalable_font(font_size):
     return ImageFont.load_default()
 
 
-# --- DİNAMİK Y KONUMU DÖNDÜREN METİN ÇİZİCİ ---
 def draw_multiline_autofit(
     draw, text, initial_size, max_width, start_y, center_x, fill
 ):
@@ -186,11 +204,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
 
-    # ARKA PLAN PERDESİ
+    # BEYAZ ŞEFFAF PERDE
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
-    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.67)
+    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.68)
     overlay_draw.rounded_rectangle(
         [rect_x1, rect_y1, rect_x2, rect_y2],
         radius=20,
@@ -201,12 +219,12 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # 1. Ad Soyad
-    current_y = H * 0.40
+    # 1. Ad Soyad (Üstten daha rahat boşluk bırakıldı: H * 0.42)
+    current_y = H * 0.42
     current_y = draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
-        int(W * 0.062),
+        int(W * 0.060),
         max_text_width,
         current_y,
         W / 2,
@@ -218,7 +236,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     current_y = draw_multiline_autofit(
         draw,
         f"- {rol} -",
-        int(W * 0.040),
+        int(W * 0.038),
         max_text_width,
         current_y,
         W / 2,
@@ -231,20 +249,20 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         current_y = draw_multiline_autofit(
             draw,
             kulup,
-            int(W * 0.032),
+            int(W * 0.031),
             max_text_width,
             current_y,
             W / 2,
             "#222222",
         )
 
-    # 4. Kategori (Örn: BÜYÜK ERKEK / ORGANİK YAY)
+    # 4. Kategori
     if "Hakem" not in rol and kategori:
         current_y += int(H * 0.01)
         draw_multiline_autofit(
             draw,
             kategori.upper(),
-            int(W * 0.038),
+            int(W * 0.036),
             max_text_width,
             current_y,
             W / 2,
@@ -266,7 +284,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     qr_w = int(W * 0.30)
     qr_img = qr_img.resize((qr_w, qr_w))
-    qr_x, qr_y = int((W - qr_w) / 2), int(H * 0.80 - (qr_w / 2))
+    qr_x, qr_y = int((W - qr_w) / 2), int(H * 0.81 - (qr_w / 2))
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
@@ -312,7 +330,7 @@ if st.session_state["admin_logged_in"]:
         st.rerun()
 
 # ==========================================
-# MENÜ 1: GİRİŞ KONTROLÜ (SAHA) - ÖZEL ÇAPRAZ İZİN MANTIĞI
+# MENÜ 1: GİRİŞ KONTROLÜ (SAHA)
 # ==========================================
 if sayfa == "📱 Giriş Kontrolü (Saha)":
     st.header("📱 Kapı Kontrol Ekranı")
@@ -349,21 +367,14 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
             if kisi:
                 ad_soyad, rol, kisi_kategori, kulup = kisi
 
-                # 1. Hakem, Antrenör ve Görevliler HER ZAMAN girebilir.
                 is_vip_role = any(
                     r in rol for r in ["Hakem", "Antrenör", "Görevli"]
                 )
 
-                # 2. Sporcunun kategorilerini liste yapıyoruz (Örn: ['BÜYÜK ERKEK', 'ORGANİK YAY'])
                 sporcu_kategorileri = [
                     k.strip() for k in str(kisi_kategori).split("/") if k.strip()
                 ]
 
-                # 3. ÖZEL İZİN KONTROLÜ:
-                # - Tüm Kişiler modu seçiliyse
-                # - VEYA Aktif kategori doğrudan sporcunun kategorileri arasındaysa
-                # - VEYA Sahada 'GENÇ ERKEK' varken sporcunun 'ORGANİK YAY' kategorisi varsa
-                # - VEYA Sahada 'ORGANİK YAY' varken sporcunun 'GENÇ ERKEK' kategorisi varsa
                 is_kategori_allowed = False
 
                 if aktif_kategori == "Tüm Kategori ve Görevliler":
@@ -437,7 +448,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
             col_kat1, col_kat2 = st.columns([1, 1])
             with col_kat1:
                 st.markdown("#### ➕ Yeni Kategori Ekle")
-                yeni_kat = st.text_input("Kategori Adı (Örn: Organik Yay):")
+                yeni_kat = st.text_input("Kategori Adı:")
                 if st.button("Kategoriyi Kaydet"):
                     if yeni_kat:
                         try:
@@ -525,6 +536,14 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         conn = get_connection()
                         cursor = conn.cursor()
                         eklenen_sayi = 0
+
+                        for kat in df_parsed["kategori"].unique():
+                            if kat and str(kat).strip():
+                                cursor.execute(
+                                    "INSERT OR IGNORE INTO kategoriler (ad)"
+                                    " VALUES (?)",
+                                    (str(kat).strip(),),
+                                )
 
                         grouped = (
                             df_parsed.groupby("ad_soyad")
