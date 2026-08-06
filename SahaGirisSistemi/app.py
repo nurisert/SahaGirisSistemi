@@ -232,7 +232,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#222222",
         )
 
-    if "Hakem" not in rol and kategori:
+    if "Hakem" not in rol and "Delegesi" not in rol and kategori:
         current_y += int(H * 0.01)
         draw_multiline_autofit(
             draw,
@@ -343,7 +343,13 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
                 ad_soyad, rol, kisi_kategori, kulup = kisi
 
                 is_vip_role = any(
-                    r in rol for r in ["Hakem", "Antrenör", "Görevli"]
+                    r in rol
+                    for r in [
+                        "Hakem",
+                        "Antrenör",
+                        "Görevli",
+                        "Müsabaka Teknik Delegesi",
+                    ]
                 )
 
                 sporcu_kategorileri = [
@@ -535,8 +541,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             st.rerun()
 
+        # TAB 2: KATILIMCI SİL/EKLE
         with tab2:
-            st.subheader("Yeni Katılımcı veya Hakem Kaydı")
+            st.subheader("Yeni Katılımcı veya Görevli Kaydı")
             kategoriler = get_kategoriler()
             with st.form("katilimci_form"):
                 qr_id = st.text_input("QR Kod ID (Örn: HKM-101 veya SPOR-101):")
@@ -547,6 +554,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     [
                         "Sporcu",
                         "Antrenör",
+                        "Müsabaka Teknik Delegesi",
                         "Hakem - Baş Hakem",
                         "Hakem - İdari Hakem",
                         "Hakem - Masa Hakemi",
@@ -581,6 +589,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
+        # TAB 3: PDF TOPLU
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
@@ -650,6 +659,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
+        # TAB 4: DÜZENLE / SİL
         with tab4:
             st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
@@ -682,6 +692,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             [
                                 "Sporcu",
                                 "Antrenör",
+                                "Müsabaka Teknik Delegesi",
                                 "Hakem - Baş Hakem",
                                 "Hakem - İdari Hakem",
                                 "Hakem - Masa Hakemi",
@@ -748,11 +759,13 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("Silindi!")
                         st.rerun()
 
+        # TAB 5: LİSTE
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
+        # TAB 6: BASIM (GÜNCELLENMİŞ İNDİRME FİLTRELERİ)
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
@@ -760,15 +773,35 @@ elif sayfa == "⚙️ Yönetim Paneli":
 
             if not df_katilimcilar.empty:
                 with st.expander("📦 TOPLU YAKA KARTI İNDİR (ZIP)"):
+                    filtre_secenekleri = [
+                        "Tüm Kişiler",
+                        "Sadece Hakemler",
+                        "Sadece Antrenörler",
+                        "Sadece Görevliler / Delegeler",
+                    ] + kategoriler
                     filtre = st.selectbox(
-                        "İndirme Filtresi:",
-                        ["Tüm Kişiler", "Sadece Hakemler"] + kategoriler,
+                        "İndirme Filtresi:", filtre_secenekleri
                     )
+
                     if filtre == "Tüm Kişiler":
                         df_target = df_katilimcilar
                     elif filtre == "Sadece Hakemler":
                         df_target = df_katilimcilar[
-                            df_katilimcilar["rol"].str.contains("Hakem")
+                            df_katilimcilar["rol"].str.contains(
+                                "Hakem", na=False
+                            )
+                        ]
+                    elif filtre == "Sadece Antrenörler":
+                        df_target = df_katilimcilar[
+                            df_katilimcilar["rol"].str.contains(
+                                "Antrenör", na=False
+                            )
+                        ]
+                    elif filtre == "Sadece Görevliler / Delegeler":
+                        df_target = df_katilimcilar[
+                            df_katilimcilar["rol"].str.contains(
+                                "Görevli|Delegesi", na=False
+                            )
                         ]
                     else:
                         df_target = df_katilimcilar[
@@ -787,6 +820,8 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             file_name=f"{filtre.replace(' ', '_')}_Kartlar.zip",
                             mime="application/zip",
                         )
+                    else:
+                        st.warning("Seçilen filtreye uygun kişi bulunamadı.")
 
                 st.divider()
                 st.markdown("#### 👤 Tekli Kart Önizleme")
