@@ -83,6 +83,7 @@ def get_katilimcilar():
     return df
 
 
+@st.cache_resource
 def load_scalable_font(font_size):
     font_paths = [
         "arial.ttf",
@@ -191,6 +192,8 @@ def parse_pdf_participants(pdf_file):
     return pd.DataFrame(participants)
 
 
+# --- PERFORMANS OPTİMİZASYONU: ÖNBELLEKLEME (CACHE) ---
+@st.cache_data(show_spinner=False)
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     sablon_yolu = "sablon.png"
     if not os.path.exists(sablon_yolu):
@@ -204,7 +207,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
 
-    # BEYAZ ŞEFFAF PERDE
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
@@ -219,7 +221,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # 1. Ad Soyad (Üstten daha rahat boşluk bırakıldı: H * 0.42)
     current_y = H * 0.42
     current_y = draw_multiline_autofit(
         draw,
@@ -231,7 +232,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#000000",
     )
 
-    # 2. Rol / Görev
     current_y += int(H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
@@ -243,7 +243,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#111111",
     )
 
-    # 3. Kulüp
     if kulup:
         current_y += int(H * 0.01)
         current_y = draw_multiline_autofit(
@@ -256,7 +255,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#222222",
         )
 
-    # 4. Kategori
     if "Hakem" not in rol and kategori:
         current_y += int(H * 0.01)
         draw_multiline_autofit(
@@ -269,7 +267,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#000000",
         )
 
-    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -292,6 +289,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     return buf.getvalue()
 
 
+@st.cache_data(show_spinner="Kartlar paketleniyor...")
 def generate_zip_of_cards(df_list):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(
@@ -460,6 +458,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             conn.commit()
                             conn.close()
+                            st.cache_data.clear()
                             st.success(f"'{yeni_kat}' eklendi!")
                             st.rerun()
                         except sqlite3.IntegrityError:
@@ -510,6 +509,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         )
                         conn.commit()
                         conn.close()
+                        st.cache_data.clear()
                         st.success(f"'{ad_soyad}' başarıyla kaydedildi!")
                         st.rerun()
                     except sqlite3.IntegrityError:
@@ -575,6 +575,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
 
                         conn.commit()
                         conn.close()
+                        st.cache_data.clear()
                         st.success(
                             f"🎉 Toplam {eklenen_sayi} sporcu ve kategorileri"
                             " aktarıldı!"
@@ -663,6 +664,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             conn.commit()
                             conn.close()
+                            st.cache_data.clear()
                             st.success("✅ Güncellendi!")
                             st.rerun()
 
@@ -676,6 +678,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         )
                         conn.commit()
                         conn.close()
+                        st.cache_data.clear()
                         st.success("Silindi!")
                         st.rerun()
 
