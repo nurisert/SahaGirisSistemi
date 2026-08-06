@@ -14,6 +14,18 @@ from PIL import Image, ImageDraw, ImageFont
 ADMIN_PASSWORD = "1234"
 DB_PATH = "yarisma.db"
 
+# TANIMLI TÜM ROLLER LİSTESİ
+TUM_ROLLER = [
+    "Sporcu",
+    "Antrenör",
+    "Müsabaka Teknik Delegesi",
+    "Baş Hakem",
+    "İdari Hakem",
+    "Masa Hakemi",
+    "Hakem",
+    "Görevli",
+]
+
 
 def get_connection():
     return sqlite3.connect(DB_PATH, timeout=10.0)
@@ -184,10 +196,8 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
 
-    # TEMİZ ROL FORMATLAMA: "Hakem - Baş Hakem" ise direkt "Baş Hakem" yazsın
     gorunur_rol = rol.replace("Hakem - ", "").strip()
 
-    # BEYAZ ŞEFFAF PERDE
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
@@ -202,7 +212,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    # 1. Ad Soyad
     current_y = H * 0.405
     current_y = draw_multiline_autofit(
         draw,
@@ -214,7 +223,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#000000",
     )
 
-    # 2. Rol / Görev (Sadece Unvan Yazılır)
     current_y += int(H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
@@ -226,7 +234,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         "#111111",
     )
 
-    # 3. Kulüp
     if kulup:
         current_y += int(H * 0.01)
         current_y = draw_multiline_autofit(
@@ -239,7 +246,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#222222",
         )
 
-    # 4. Kategori (Hakem veya Delege olanlarda kategori basılmasın)
     is_non_athlete = any(
         k in rol for k in ["Hakem", "Baş Hakem", "İdari Hakem", "Masa Hakemi", "Delegesi"]
     )
@@ -255,7 +261,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "#000000",
         )
 
-    # QR KOD
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -439,7 +444,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
             "🪪 Yaka Kartı Bas (Tekli/Toplu)",
         ])
 
-        # TAB 1: KATEGORİ YÖNETİMİ
         with tab1:
             st.subheader("🏷️ Kategori Ekle, Düzenle & Sil")
             col_kat1, col_kat2 = st.columns([1, 1])
@@ -556,7 +560,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             )
                             st.rerun()
 
-        # TAB 2: KATILIMCI SİL/EKLE
         with tab2:
             st.subheader("Yeni Katılımcı veya Görevli Kaydı")
             kategoriler = get_kategoriler()
@@ -565,18 +568,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 ad_soyad = st.text_input("Ad Soyad:")
 
                 rol_secimi = st.multiselect(
-                    "Görevi / Rolü:",
-                    [
-                        "Sporcu",
-                        "Antrenör",
-                        "Müsabaka Teknik Delegesi",
-                        "Baş Hakem",
-                        "İdari Hakem",
-                        "Masa Hakemi",
-                        "Hakem",
-                        "Görevli",
-                    ],
-                    default=["Sporcu"],
+                    "Görevi / Rolü:", TUM_ROLLER, default=["Sporcu"]
                 )
 
                 secilen_kategoriler = st.multiselect(
@@ -607,7 +599,6 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     except sqlite3.IntegrityError:
                         st.error("Bu QR ID zaten tanımlı!")
 
-        # TAB 3: PDF TOPLU
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
             uploaded_file = st.file_uploader(
@@ -677,7 +668,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
-        # TAB 4: DÜZENLE / SİL
+        # TAB 4: DÜZENLE / SİL (GÜVENLİ MULTISELECT İLE)
         with tab4:
             st.subheader("✏️ Katılımcı / Hakem Güncelle veya Sil")
             df_katilimcilar = get_katilimcilar()
@@ -702,22 +693,19 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             "Ad Soyad:", value=kisi["ad_soyad"]
                         )
 
-                        mevcut_roller = [
-                            r.strip() for r in kisi["rol"].split("/")
+                        # ESKİ METİNLERİ YENİ ROLLERLE UYUMLU HALE GETİRME FİLTRESİ
+                        raw_roller = [
+                            r.strip().replace("Hakem - ", "")
+                            for r in kisi["rol"].split("/")
                         ]
+                        mevcut_roller = [
+                            r for r in raw_roller if r in TUM_ROLLER
+                        ]
+                        if not mevcut_roller:
+                            mevcut_roller = ["Sporcu"]
+
                         yeni_roller = st.multiselect(
-                            "Görevi:",
-                            [
-                                "Sporcu",
-                                "Antrenör",
-                                "Müsabaka Teknik Delegesi",
-                                "Baş Hakem",
-                                "İdari Hakem",
-                                "Masa Hakemi",
-                                "Hakem",
-                                "Görevli",
-                            ],
-                            default=mevcut_roller,
+                            "Görevi:", TUM_ROLLER, default=mevcut_roller
                         )
 
                         mevcut_kategoriler = [
@@ -777,13 +765,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         st.success("Silindi!")
                         st.rerun()
 
-        # TAB 5: LİSTE
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
             df_katilimcilar = get_katilimcilar()
             st.dataframe(df_katilimcilar, use_container_width=True)
 
-        # TAB 6: BASIM
         with tab6:
             st.subheader("🪪 Yaka Kartı Basımı (Tekli & Toplu ZIP)")
             df_katilimcilar = get_katilimcilar()
