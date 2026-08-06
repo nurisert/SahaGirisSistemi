@@ -1,22 +1,20 @@
 import io
 import os
-import sqlite3
-import threading
 import zipfile
 import cv2
 import numpy as np
 import pandas as pd
 import pdfplumber
+import psycopg2
 import qrcode
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 
-# --- YÖNETİCİ ŞİFRESİ AYARI ---
+# --- YÖNETİCİ ŞİFRESİ VE POSTGRESQL BAGLANTISI ---
 ADMIN_PASSWORD = "1234"
-DB_PATH = "yarisma.db"
 
-# EŞZAMANLI YAZMA KİLİDİ (ÇÖKMEYİ ENGELLER)
-DB_LOCK = threading.Lock()
+# 🛑 AŞAĞIDAKİ LINKTE 'BURAYA_SUPABASE_SIFRENI_YAZ' YERİNE KENDİ SUPABASE ŞİFRENİ YAZ!
+DB_URI = "postgresql://postgres.bsdhohsivczydtjnqilf:151608Amasya.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
 
 TUM_ROLLER = [
     "Sporcu",
@@ -31,42 +29,41 @@ TUM_ROLLER = [
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH, timeout=60.0, check_same_thread=False)
+    return psycopg2.connect(DB_URI)
 
 
 def init_db():
-    with DB_LOCK:
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS kategoriler (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    ad TEXT UNIQUE NOT NULL
-                )
-            """)
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS katilimcilar (
-                    qr_code TEXT PRIMARY KEY,
-                    ad_soyad TEXT NOT NULL,
-                    rol TEXT NOT NULL,
-                    kategori_ad TEXT,
-                    kulup TEXT
-                )
-            """)
-            conn.commit()
-        finally:
-            conn.close()
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS kategoriler (
+                id SERIAL PRIMARY KEY,
+                ad TEXT UNIQUE NOT NULL
+            );
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS katilimcilar (
+                qr_code TEXT PRIMARY KEY,
+                ad_soyad TEXT NOT NULL,
+                rol TEXT NOT NULL,
+                kategori_ad TEXT,
+                kulup TEXT
+            );
+        """)
+        conn.commit()
+    finally:
+        conn.close()
 
 
 init_db()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def get_kategoriler():
     conn = get_connection()
     try:
-        df = pd.read_sql_query("SELECT ad FROM kategoriler", conn)
+        df = pd.read_sql_query("SELECT ad FROM kategoriler ORDER BY id ASC", conn)
         return df["ad"].tolist()
     except Exception:
         return []
@@ -74,7 +71,7 @@ def get_kategoriler():
         conn.close()
 
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def get_katilimcilar():
     conn = get_connection()
     try:
@@ -383,7 +380,7 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
             try:
                 cursor = conn.cursor()
                 cursor.execute(
-                    "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar WHERE qr_code = ?",
+                    "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar WHERE qr_code = %s",
                     (qr_data,),
                 )
                 kisi = cursor.fetchone()
@@ -487,22 +484,21 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 yeni_kat = st.text_input("Yeni Kategori Adı:")
                 if st.button("Kategoriyi Kaydet"):
                     if yeni_kat.strip():
-                        with DB_LOCK:
-                            conn = get_connection()
-                            try:
-                                cursor = conn.cursor()
-                                cursor.execute(
-                                    "INSERT INTO kategoriler (ad) VALUES (?)",
-                                    (yeni_kat.strip(),),
-                                )
-                                conn.commit()
-                                st.cache_data.clear()
-                                st.success(f"'{yeni_kat.strip()}' eklendi!")
-                                st.rerun()
-                            except sqlite3.IntegrityError:
-                                st.error("Bu kategori zaten mevcut!")
-                            finally:
-                                conn.close()
+                        conn = get_connection()
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "INSERT INTO kategoriler (ad) VALUES (%s)",
+                                (yeni_kat.strip(),),
+                            )
+                            conn.commit()
+                            st.cache_data.clear()
+                            st.success(f"'{yeni_kat.strip()}' eklendi!")
+                            st.rerun()
+                        except psycopg2.IntegrityError:
+                            st.error("Bu kategori zaten mevcut!")
+                        finally:
+                            conn.close()
                     else:
                         st.warning("Lütfen bir kategori adı girin.")
 
@@ -524,83 +520,68 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     with c_btn1:
                         if st.button("✏️ İsmini Güncelle"):
                             if guncel_kat_adi.strip():
-                                with DB_LOCK:
-                                    conn = get_connection()
-                                    try:
-                                        cursor = conn.cursor()
-                                        cursor.execute(
-                                            "UPDATE kategoriler SET ad = ?"
-                                            " WHERE ad = ?",
-                                            (
-                                                guncel_kat_adi.strip(),
-                                                secilen_kat,
-                                            ),
-                                        )
-
-                                        cursor.execute(
-                                            "SELECT qr_code, kategori_ad FROM"
-                                            " katilimcilar WHERE kategori_ad"
-                                            " LIKE ?",
-                                            (f"%{secilen_kat}%",),
-                                        )
-                                        rows = cursor.fetchall()
-                                        for qr_c, kat_text in rows:
-                                            yeni_text = str(kat_text).replace(
-                                                secilen_kat,
-                                                guncel_kat_adi.strip(),
-                                            )
-                                            cursor.execute(
-                                                "UPDATE katilimcilar SET"
-                                                " kategori_ad = ? WHERE qr_code"
-                                                " = ?",
-                                                (yeni_text, qr_c),
-                                            )
-
-                                        conn.commit()
-                                        st.cache_data.clear()
-                                        st.success("Kategori güncellendi!")
-                                        st.rerun()
-                                    finally:
-                                        conn.close()
-
-                    with c_btn2:
-                        if st.button("❌ Kategoriyi Sil", type="primary"):
-                            with DB_LOCK:
                                 conn = get_connection()
                                 try:
                                     cursor = conn.cursor()
                                     cursor.execute(
-                                        "DELETE FROM kategoriler WHERE ad = ?",
-                                        (secilen_kat,),
+                                        "UPDATE kategoriler SET ad = %s WHERE ad = %s",
+                                        (guncel_kat_adi.strip(), secilen_kat),
                                     )
 
                                     cursor.execute(
-                                        "SELECT qr_code, kategori_ad FROM"
-                                        " katilimcilar WHERE kategori_ad LIKE"
-                                        " ?",
+                                        "SELECT qr_code, kategori_ad FROM katilimcilar WHERE kategori_ad LIKE %s",
                                         (f"%{secilen_kat}%",),
                                     )
                                     rows = cursor.fetchall()
                                     for qr_c, kat_text in rows:
-                                        kategori_listesi = [
-                                            k.strip()
-                                            for k in str(kat_text).split("/")
-                                            if k.strip() != secilen_kat
-                                        ]
-                                        yeni_text = " / ".join(kategori_listesi)
+                                        yeni_text = str(kat_text).replace(
+                                            secilen_kat, guncel_kat_adi.strip()
+                                        )
                                         cursor.execute(
-                                            "UPDATE katilimcilar SET"
-                                            " kategori_ad = ? WHERE qr_code ="
-                                            " ?",
+                                            "UPDATE katilimcilar SET kategori_ad = %s WHERE qr_code = %s",
                                             (yeni_text, qr_c),
                                         )
 
                                     conn.commit()
                                     st.cache_data.clear()
-                                    st.success(f"'{secilen_kat}' silindi!")
+                                    st.success("Kategori güncellendi!")
                                     st.rerun()
                                 finally:
                                     conn.close()
+
+                    with c_btn2:
+                        if st.button("❌ Kategoriyi Sil", type="primary"):
+                            conn = get_connection()
+                            try:
+                                cursor = conn.cursor()
+                                cursor.execute(
+                                    "DELETE FROM kategoriler WHERE ad = %s",
+                                    (secilen_kat,),
+                                )
+
+                                cursor.execute(
+                                    "SELECT qr_code, kategori_ad FROM katilimcilar WHERE kategori_ad LIKE %s",
+                                    (f"%{secilen_kat}%",),
+                                )
+                                rows = cursor.fetchall()
+                                for qr_c, kat_text in rows:
+                                    kategori_listesi = [
+                                        k.strip()
+                                        for k in str(kat_text).split("/")
+                                        if k.strip() != secilen_kat
+                                    ]
+                                    yeni_text = " / ".join(kategori_listesi)
+                                    cursor.execute(
+                                        "UPDATE katilimcilar SET kategori_ad = %s WHERE qr_code = %s",
+                                        (yeni_text, qr_c),
+                                    )
+
+                                conn.commit()
+                                st.cache_data.clear()
+                                st.success(f"'{secilen_kat}' silindi!")
+                                st.rerun()
+                            finally:
+                                conn.close()
 
         with tab2:
             st.subheader("Yeni Katılımcı veya Görevli Kaydı")
@@ -623,30 +604,21 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 if submit and qr_id and ad_soyad:
                     rol_str = " / ".join(rol_secimi)
                     kat_str = " / ".join(secilen_kategoriler)
-                    with DB_LOCK:
-                        conn = get_connection()
-                        try:
-                            cursor = conn.cursor()
-                            cursor.execute(
-                                "INSERT INTO katilimcilar (qr_code, ad_soyad,"
-                                " rol, kategori_ad, kulup) VALUES (?, ?, ?,"
-                                " ?, ?)",
-                                (
-                                    qr_id.strip(),
-                                    ad_soyad,
-                                    rol_str,
-                                    kat_str,
-                                    kulup,
-                                ),
-                            )
-                            conn.commit()
-                            st.cache_data.clear()
-                            st.success(f"'{ad_soyad}' başarıyla kaydedildi!")
-                            st.rerun()
-                        except sqlite3.IntegrityError:
-                            st.error("Bu QR ID zaten tanımlı!")
-                        finally:
-                            conn.close()
+                    conn = get_connection()
+                    try:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup) VALUES (%s, %s, %s, %s, %s)",
+                            (qr_id.strip(), ad_soyad, rol_str, kat_str, kulup),
+                        )
+                        conn.commit()
+                        st.cache_data.clear()
+                        st.success(f"'{ad_soyad}' başarıyla kaydedildi!")
+                        st.rerun()
+                    except psycopg2.IntegrityError:
+                        st.error("Bu QR ID zaten tanımlı!")
+                    finally:
+                        conn.close()
 
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
@@ -666,63 +638,60 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     )
 
                     if st.button("🚀 Tüm Sporcuları ve Kategorileri Aktar"):
-                        with DB_LOCK:
-                            conn = get_connection()
-                            try:
-                                cursor = conn.cursor()
-                                eklenen_sayi = 0
+                        conn = get_connection()
+                        try:
+                            cursor = conn.cursor()
+                            eklenen_sayi = 0
 
-                                for kat in df_parsed["kategori"].unique():
-                                    if kat and str(kat).strip():
-                                        cursor.execute(
-                                            "INSERT OR IGNORE INTO kategoriler"
-                                            " (ad) VALUES (?)",
-                                            (str(kat).strip(),),
-                                        )
-
-                                grouped = (
-                                    df_parsed.groupby("ad_soyad")
-                                    .agg({
-                                        "kulup": "first",
-                                        "kategori": lambda x: " / ".join(
-                                            set([str(i) for i in x if i])
-                                        ),
-                                    })
-                                    .reset_index()
-                                )
-
-                                for idx, row in grouped.iterrows():
-                                    ad_soyad = row["ad_soyad"]
-                                    kulup = row["kulup"]
-                                    kategori = row["kategori"]
-                                    qr_id = f"SPOR-{1000 + idx}"
-
+                            for kat in df_parsed["kategori"].unique():
+                                if kat and str(kat).strip():
                                     cursor.execute(
-                                        """
-                                        INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
-                                        VALUES (?, ?, ?, ?, ?)
-                                        ON CONFLICT(qr_code) DO UPDATE SET
-                                        kategori_ad = excluded.kategori_ad
-                                    """,
-                                        (
-                                            qr_id,
-                                            ad_soyad,
-                                            "Sporcu",
-                                            kategori,
-                                            kulup,
-                                        ),
+                                        "INSERT INTO kategoriler (ad) VALUES (%s) ON CONFLICT (ad) DO NOTHING",
+                                        (str(kat).strip(),),
                                     )
-                                    eklenen_sayi += 1
 
-                                conn.commit()
-                                st.cache_data.clear()
-                                st.success(
-                                    f"🎉 Toplam {eklenen_sayi} sporcu ve"
-                                    " kategorileri aktarıldı!"
+                            grouped = (
+                                df_parsed.groupby("ad_soyad")
+                                .agg({
+                                    "kulup": "first",
+                                    "kategori": lambda x: " / ".join(
+                                        set([str(i) for i in x if i])
+                                    ),
+                                })
+                                .reset_index()
+                            )
+
+                            for idx, row in grouped.iterrows():
+                                ad_soyad = row["ad_soyad"]
+                                kulup = row["kulup"]
+                                kategori = row["kategori"]
+                                qr_id = f"SPOR-{1000 + idx}"
+
+                                cursor.execute(
+                                    """
+                                    INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
+                                    VALUES (%s, %s, %s, %s, %s)
+                                    ON CONFLICT(qr_code) DO UPDATE SET
+                                    kategori_ad = EXCLUDED.kategori_ad
+                                """,
+                                    (
+                                        qr_id,
+                                        ad_soyad,
+                                        "Sporcu",
+                                        kategori,
+                                        kulup,
+                                    ),
                                 )
-                                st.rerun()
-                            finally:
-                                conn.close()
+                                eklenen_sayi += 1
+
+                            conn.commit()
+                            st.cache_data.clear()
+                            st.success(
+                                f"🎉 Toplam {eklenen_sayi} sporcu ve kategorileri aktarıldı!"
+                            )
+                            st.rerun()
+                        finally:
+                            conn.close()
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
@@ -785,48 +754,45 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         if btn_update:
                             rol_str = " / ".join(yeni_roller)
                             kat_str = " / ".join(yeni_kategoriler)
-                            with DB_LOCK:
-                                conn = get_connection()
-                                try:
-                                    cursor = conn.cursor()
-                                    cursor.execute(
-                                        """
-                                        UPDATE katilimcilar 
-                                        SET ad_soyad = ?, rol = ?, kategori_ad = ?, kulup = ?
-                                        WHERE qr_code = ?
-                                    """,
-                                        (
-                                            yeni_ad,
-                                            rol_str,
-                                            kat_str,
-                                            yeni_kulup,
-                                            secilen_qr,
-                                        ),
-                                    )
-                                    conn.commit()
-                                    st.cache_data.clear()
-                                    st.success("✅ Güncellendi!")
-                                    st.rerun()
-                                finally:
-                                    conn.close()
-
-                with col2:
-                    if st.button("❌ Bu Kaydı Sil", type="primary"):
-                        with DB_LOCK:
                             conn = get_connection()
                             try:
                                 cursor = conn.cursor()
                                 cursor.execute(
-                                    "DELETE FROM katilimcilar WHERE qr_code ="
-                                    " ?",
-                                    (secilen_qr,),
+                                    """
+                                    UPDATE katilimcilar 
+                                    SET ad_soyad = %s, rol = %s, kategori_ad = %s, kulup = %s
+                                    WHERE qr_code = %s
+                                """,
+                                    (
+                                        yeni_ad,
+                                        rol_str,
+                                        kat_str,
+                                        yeni_kulup,
+                                        secilen_qr,
+                                    ),
                                 )
                                 conn.commit()
                                 st.cache_data.clear()
-                                st.success("Silindi!")
+                                st.success("✅ Güncellendi!")
                                 st.rerun()
                             finally:
                                 conn.close()
+
+                with col2:
+                    if st.button("❌ Bu Kaydı Sil", type="primary"):
+                        conn = get_connection()
+                        try:
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                "DELETE FROM katilimcilar WHERE qr_code = %s",
+                                (secilen_qr,),
+                            )
+                            conn.commit()
+                            st.cache_data.clear()
+                            st.success("Silindi!")
+                            st.rerun()
+                        finally:
+                            conn.close()
 
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
