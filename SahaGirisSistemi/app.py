@@ -165,32 +165,56 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         sablon_yolu = os.path.join("SahaGirisSistemi", "sablon.png")
 
     if os.path.exists(sablon_yolu):
-        kart = Image.open(sablon_yolu).convert("RGB")
+        kart = Image.open(sablon_yolu).convert("RGBA")
     else:
         st.error("'sablon.png' dosyası bulunamadı!")
-        kart = Image.new("RGB", (800, 1200), color="white")
+        kart = Image.new("RGBA", (800, 1200), opacity=255, color="white")
 
     W, H = kart.size
+
+    # --- OKUNABİLİRLİK İÇİN ŞEFFAF BEYAZ KUTU (PERDE) ---
+    overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+
+    # Metin bölgesini hafif beyazlatıyoruz (Opaklık: 210/255)
+    rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
+    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.67)
+    overlay_draw.rounded_rectangle(
+        [rect_x1, rect_y1, rect_x2, rect_y2],
+        radius=20,
+        fill=(255, 255, 255, 215),
+    )
+
+    # Perdeyi kartın üzerine birleştiriyoruz
+    kart = Image.alpha_composite(kart, overlay).convert("RGB")
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
+    # METİNLER (Artık tam okunaklı)
     draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
-        int(W * 0.060),
+        int(W * 0.070),
         max_text_width,
-        H * 0.43,
+        H * 0.41,
         W / 2,
         "#000000",
     )
     draw_multiline_autofit(
-        draw, rol, int(W * 0.042), max_text_width, H * 0.49, W / 2, "#111111"
+        draw,
+        f"- {rol} -",
+        int(W * 0.042),
+        max_text_width,
+        H * 0.48,
+        W / 2,
+        "#111111",
     )
+
     if kulup:
         draw_multiline_autofit(
             draw,
             kulup,
-            int(W * 0.036),
+            int(W * 0.033),
             max_text_width,
             H * 0.54,
             W / 2,
@@ -202,13 +226,14 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         draw_multiline_autofit(
             draw,
             kategori.upper(),
-            int(W * 0.040),
+            int(W * 0.042),
             max_text_width,
-            H * 0.61,
+            H * 0.62,
             W / 2,
-            "#333333",
+            "#000000",
         )
 
+    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -269,7 +294,7 @@ if st.session_state["admin_logged_in"]:
         st.rerun()
 
 # ==========================================
-# MENÜ 1: GİRİŞ KONTROLÜ (SAHA) - ANLIK KAMERA SCANNER
+# MENÜ 1: GİRİŞ KONTROLÜ (SAHA)
 # ==========================================
 if sayfa == "📱 Giriş Kontrolü (Saha)":
     st.header("📱 Kapı Kontrol Ekranı")
@@ -287,12 +312,7 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
         st.info(f"**Aktif Kategori:** {aktif_kategori}")
 
         st.subheader("📷 QR Kod Okutun")
-
-        # Doğrudan Anlık Kamera Alanı
-        img_file = st.camera_input(
-            "Kamerayı QR Koda Tutun ve Butona Basın",
-            help="Mobilde kamera ekranında çıkan döndürme simgesiyle arka kamerayı seçebilirsiniz.",
-        )
+        img_file = st.camera_input("Kamerayı QR Koda Tutun ve Çekin")
 
         if img_file is not None:
             bytes_data = img_file.getvalue()
@@ -338,8 +358,8 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
                     st.error(f"❌ Tanımsız QR Kod! (Kod: {qr_data})")
             else:
                 st.warning(
-                    "Görselde QR kod tespit edilemedi. Lütfen QR kodu net ve"
-                    " hizada tutarak tekrar çekin."
+                    "Görselde QR kod tespit edilemedi. Lütfen QR kodu net tutup"
+                    " tekrar çekin."
                 )
 
 # ==========================================
@@ -520,7 +540,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 if kategori and kategori != "None":
                                     cursor.execute(
                                         "INSERT OR IGNORE INTO kategoriler"
-                                        " (ad) VALUES (?)"
+                                        " (ad) VALUES (?)",
                                         (kategori,),
                                     )
                                 cursor.execute(
