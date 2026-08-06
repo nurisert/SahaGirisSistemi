@@ -5,3 +5,4 @@ pillow
 opencv-python-headless
 pdfplumber
 openpyxl
+psycopg2-binary
