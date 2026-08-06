@@ -13,7 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 # --- YÖNETİCİ ŞİFRESİ VE POSTGRESQL BAGLANTISI ---
 ADMIN_PASSWORD = "1234"
 
-# 🛑 AŞAĞIDAKİ LINKTE 'BURAYA_SUPABASE_SIFRENI_YAZ' YERİNE KENDİ SUPABASE ŞİFRENİ YAZ!
+# 🛑 AŞAĞIDAKİ LINKTE KENDİ SUPABASE ŞİFREN BULUNMALI!
 DB_URI = "postgresql://postgres.bsdhohsivczydtjnqilf:151608Amasya.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
 
 TUM_ROLLER = [
@@ -29,7 +29,7 @@ TUM_ROLLER = [
 
 
 def get_connection():
-    return psycopg2.connect(DB_URI)
+    return psycopg2.connect(DB_URI, connect_timeout=5)
 
 
 def init_db():
@@ -59,7 +59,8 @@ def init_db():
 init_db()
 
 
-@st.cache_data(ttl=5, show_spinner=False)
+# HIZ İÇİN ÖNBELLEK SÜRESİ ARTIRILDI (ttl=60sn)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_kategoriler():
     conn = get_connection()
     try:
@@ -71,7 +72,7 @@ def get_kategoriler():
         conn.close()
 
 
-@st.cache_data(ttl=5, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def get_katilimcilar():
     conn = get_connection()
     try:
@@ -197,7 +198,7 @@ def parse_pdf_participants(pdf_file):
     return pd.DataFrame(participants)
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=500)
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     sablon_yolu = "sablon.png"
     if not os.path.exists(sablon_yolu):
@@ -309,7 +310,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
-    kart.save(buf, format="PNG")
+    kart.save(buf, format="PNG", optimize=True)
     return buf.getvalue()
 
 
@@ -376,19 +377,17 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
         qr_data, bbox, _ = detector.detectAndDecode(cv_img)
 
         if qr_data:
-            conn = get_connection()
-            try:
-                cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT ad_soyad, rol, kategori_ad, kulup FROM katilimcilar WHERE qr_code = %s",
-                    (qr_data,),
-                )
-                kisi = cursor.fetchone()
-            finally:
-                conn.close()
+            df_kats = get_katilimcilar()
+            kisi_df = df_kats[df_kats["qr_code"] == qr_data]
 
-            if kisi:
-                ad_soyad, rol, kisi_kategori, kulup = kisi
+            if not kisi_df.empty:
+                kisi = kisi_df.iloc[0]
+                ad_soyad, rol, kisi_kategori, kulup = (
+                    kisi["ad_soyad"],
+                    kisi["rol"],
+                    kisi["kategori_ad"],
+                    kisi["kulup"],
+                )
 
                 is_vip_role = any(
                     r in str(rol)
