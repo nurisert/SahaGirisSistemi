@@ -184,10 +184,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
 
     W, H = kart.size
 
+    # BEYAZ ŞEFFAF PERDE (Alt sınır H * 0.64 yapılarak QR ile arası açıldı)
     overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
     overlay_draw = ImageDraw.Draw(overlay)
     rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
-    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.68)
+    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.64)
     overlay_draw.rounded_rectangle(
         [rect_x1, rect_y1, rect_x2, rect_y2],
         radius=20,
@@ -198,52 +199,57 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
-    current_y = H * 0.42
+    # 1. Ad Soyad (Font boyutu bir tık küçültüldü: 0.052)
+    current_y = H * 0.405
     current_y = draw_multiline_autofit(
         draw,
         ad_soyad.upper(),
-        int(W * 0.060),
+        int(W * 0.052),
         max_text_width,
         current_y,
         W / 2,
         "#000000",
     )
 
+    # 2. Rol / Görev (Font boyutu bir tık büyütüldü: 0.042)
     current_y += int(H * 0.01)
     current_y = draw_multiline_autofit(
         draw,
         f"- {rol} -",
-        int(W * 0.038),
+        int(W * 0.042),
         max_text_width,
         current_y,
         W / 2,
         "#111111",
     )
 
+    # 3. Kulüp (Font boyutu bir tık büyütüldü: 0.035)
     if kulup:
         current_y += int(H * 0.01)
         current_y = draw_multiline_autofit(
             draw,
             kulup,
-            int(W * 0.031),
+            int(W * 0.035),
             max_text_width,
             current_y,
             W / 2,
             "#222222",
         )
 
+    # 4. Kategori (Font boyutu bir tık büyütüldü: 0.040)
     if "Hakem" not in rol and "Delegesi" not in rol and kategori:
         current_y += int(H * 0.01)
         draw_multiline_autofit(
             draw,
             kategori.upper(),
-            int(W * 0.036),
+            int(W * 0.040),
             max_text_width,
             current_y,
             W / 2,
             "#000000",
         )
 
+    # QR KOD YERLEŞTİRME
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
