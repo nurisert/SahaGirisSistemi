@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 from concurrent.futures import ThreadPoolExecutor
 
 # --- YÖNETİCİ ŞİFRESİ VE POSTGRESQL BAGLANTISI ---
-ADMIN_PASSWORD = "1234"
+ADMIN_PASSWORD = "151608Amasya"
 
 # 🛑 BURAYA KENDİ SUPABASE ŞİFRENİ YAZ!
 DB_URI = "postgresql://postgres.bsdhohsivczydtjnqilf:151608Amasya.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
@@ -20,6 +20,7 @@ DB_URI = "postgresql://postgres.bsdhohsivczydtjnqilf:151608Amasya.@aws-1-eu-west
 TUM_ROLLER = [
     "Sporcu",
     "Antrenör",
+    "Federasyon Başkanı",
     "Müsabaka Teknik Delegesi",
     "Baş Hakem",
     "İdari Hakem",
@@ -83,13 +84,13 @@ def get_katilimcilar():
         return df
     except Exception:
         return pd.DataFrame(
-            columns=["qr_code", "ad_soyad, rol", "kategori_ad", "kulup"]
+            columns=["qr_code", "ad_soyad", "rol", "kategori_ad", "kulup"]
         )
     finally:
         conn.close()
 
 
-# FONT YÜKLEMEYİ HAFIZADA TUT (HIZLANDIRICI 1)
+# FONT YÜKLEMEYİ HAFIZADA TUT
 @st.cache_resource
 def load_scalable_font(font_size):
     font_paths = [
@@ -108,7 +109,7 @@ def load_scalable_font(font_size):
     return ImageFont.load_default()
 
 
-# ŞABLON RESMİNİ RAM'E AL (HIZLANDIRICI 2)
+# ŞABLON RESMİNİ RAM'E AL
 @st.cache_resource
 def get_base_template():
     sablon_yolu = "sablon.png"
@@ -226,7 +227,6 @@ def parse_pdf_participants(pdf_file):
 
 @st.cache_data(show_spinner=False, max_entries=1000)
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
-    # Hazır perde şablonunu RAM'den çekiyoruz
     kart = get_base_template().copy()
     draw = ImageDraw.Draw(kart)
 
@@ -241,6 +241,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "Masa Hakemi",
             "Delegesi",
             "Görevli",
+            "Federasyon Başkanı",
         ]
     )
 
@@ -301,7 +302,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
                 "#000000",
             )
 
-    # QR KOD HIZLI ÇİZİMİ
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
@@ -324,7 +324,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     return buf.getvalue()
 
 
-# TEK BİR KART İŞLEME YARDIMCISI (THREAD İÇİN)
 def _process_single_card(row):
     kart_bytes = yaka_karti_olustur(
         ad_soyad=row["ad_soyad"],
@@ -337,12 +336,10 @@ def _process_single_card(row):
     return dosya_adi, kart_bytes
 
 
-# PARALEL İŞLEME İLE TOPLU ZIP OLUŞTURMA (HIZLANDIRICI 3)
 @st.cache_data(show_spinner="Kartlar yüksek hızda paketleniyor...")
 def generate_zip_of_cards(df_list):
     zip_buffer = io.BytesIO()
 
-    # Çoklu çekirdek işleme (ThreadPoolExecutor)
     rows = [row for _, row in df_list.iterrows()]
     with ThreadPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(_process_single_card, rows))
@@ -422,6 +419,7 @@ if sayfa == "📱 Giriş Kontrolü (Saha)":
                         "Antrenör",
                         "Görevli",
                         "Müsabaka Teknik Delegesi",
+                        "Federasyon Başkanı",
                     ]
                 )
 
@@ -833,6 +831,7 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         "Sadece Hakemler",
                         "Sadece Antrenörler",
                         "Sadece Görevliler / Delegeler",
+                        "Sadece Federasyon Başkanı",
                     ] + kategoriler
                     filtre = st.selectbox(
                         "İndirme Filtresi:", filtre_secenekleri
@@ -856,6 +855,12 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         df_target = df_katilimcilar[
                             df_katilimcilar["rol"].str.contains(
                                 "Görevli|Delegesi", na=False
+                            )
+                        ]
+                    elif filtre == "Sadece Federasyon Başkanı":
+                        df_target = df_katilimcilar[
+                            df_katilimcilar["rol"].str.contains(
+                                "Federasyon Başkanı", na=False
                             )
                         ]
                     else:
