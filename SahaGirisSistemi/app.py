@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 from concurrent.futures import ThreadPoolExecutor
 
 # --- YÖNETİCİ ŞİFRESİ VE POSTGRESQL BAGLANTISI ---
-ADMIN_PASSWORD = "151608Amasya"
+ADMIN_PASSWORD = "1234"
 
 # 🛑 BURAYA KENDİ SUPABASE ŞİFRENİ YAZ!
 DB_URI = "postgresql://postgres.bsdhohsivczydtjnqilf:151608Amasya.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
@@ -35,8 +35,9 @@ def get_connection():
 
 
 def init_db():
-    conn = get_connection()
+    conn = None
     try:
+        conn = get_connection()
         cursor = conn.cursor()
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS kategoriler (
@@ -54,8 +55,11 @@ def init_db():
             );
         """)
         conn.commit()
+    except Exception as e:
+        st.error(f"Veritabanı başlatma hatası: {e}")
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 init_db()
@@ -63,20 +67,23 @@ init_db()
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_kategoriler():
-    conn = get_connection()
+    conn = None
     try:
+        conn = get_connection()
         df = pd.read_sql_query("SELECT ad FROM kategoriler ORDER BY id ASC", conn)
         return df["ad"].tolist()
     except Exception:
         return []
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 @st.cache_data(ttl=60, show_spinner=False)
 def get_katilimcilar():
-    conn = get_connection()
+    conn = None
     try:
+        conn = get_connection()
         df = pd.read_sql_query(
             "SELECT qr_code, ad_soyad, rol, kategori_ad, kulup FROM katilimcilar",
             conn,
@@ -87,7 +94,8 @@ def get_katilimcilar():
             columns=["qr_code", "ad_soyad", "rol", "kategori_ad", "kulup"]
         )
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 
 # FONT YÜKLEMEYİ HAFIZADA TUT
@@ -242,6 +250,7 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
             "Delegesi",
             "Görevli",
             "Federasyon Başkanı",
+            "Antrenör",
         ]
     )
 
@@ -300,6 +309,18 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
                 current_y,
                 W / 2,
                 "#000000",
+            )
+    else:
+        if kulup:
+            current_y += int(H * 0.015)
+            draw_multiline_autofit(
+                draw,
+                str(kulup),
+                int(W * 0.038),
+                max_text_width,
+                current_y,
+                W / 2,
+                "#222222",
             )
 
     qr = qrcode.QRCode(
@@ -504,8 +525,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                 yeni_kat = st.text_input("Yeni Kategori Adı:")
                 if st.button("Kategoriyi Kaydet"):
                     if yeni_kat.strip():
-                        conn = get_connection()
+                        conn = None
                         try:
+                            conn = get_connection()
                             cursor = conn.cursor()
                             cursor.execute(
                                 "INSERT INTO kategoriler (ad) VALUES (%s)",
@@ -517,8 +539,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             st.rerun()
                         except psycopg2.IntegrityError:
                             st.error("Bu kategori zaten mevcut!")
+                        except Exception as e:
+                            st.error(f"Hata oluştu: {e}")
                         finally:
-                            conn.close()
+                            if conn:
+                                conn.close()
                     else:
                         st.warning("Lütfen bir kategori adı girin.")
 
@@ -540,8 +565,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     with c_btn1:
                         if st.button("✏️ İsmini Güncelle"):
                             if guncel_kat_adi.strip():
-                                conn = get_connection()
+                                conn = None
                                 try:
+                                    conn = get_connection()
                                     cursor = conn.cursor()
                                     cursor.execute(
                                         "UPDATE kategoriler SET ad = %s WHERE ad = %s",
@@ -566,13 +592,17 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                     st.cache_data.clear()
                                     st.success("Kategori güncellendi!")
                                     st.rerun()
+                                except Exception as e:
+                                    st.error(f"Güncelleme Hatası: {e}")
                                 finally:
-                                    conn.close()
+                                    if conn:
+                                        conn.close()
 
                     with c_btn2:
                         if st.button("❌ Kategoriyi Sil", type="primary"):
-                            conn = get_connection()
+                            conn = None
                             try:
+                                conn = get_connection()
                                 cursor = conn.cursor()
                                 cursor.execute(
                                     "DELETE FROM kategoriler WHERE ad = %s",
@@ -600,45 +630,74 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 st.cache_data.clear()
                                 st.success(f"'{secilen_kat}' silindi!")
                                 st.rerun()
+                            except Exception as e:
+                                st.error(f"Silme Hatası: {e}")
                             finally:
-                                conn.close()
+                                if conn:
+                                    conn.close()
 
         with tab2:
             st.subheader("Yeni Katılımcı veya Görevli Kaydı")
             kategoriler = get_kategoriler()
-            with st.form("katilimci_form"):
-                qr_id = st.text_input("QR Kod ID (Örn: HKM-101 veya SPOR-101):")
+
+            with st.form("katilimci_form", clear_on_submit=True):
+                qr_id = st.text_input("QR Kod ID (Örn: ANT-101 veya SPOR-101):")
                 ad_soyad = st.text_input("Ad Soyad:")
 
                 rol_secimi = st.multiselect(
-                    "Görevi / Rolü:", TUM_ROLLER, default=["Sporcu"]
+                    "Görevi / Rolü:", TUM_ROLLER, default=["Antrenör"]
                 )
 
                 secilen_kategoriler = st.multiselect(
-                    "Kategori(ler):", kategoriler, default=[]
+                    "Kategori(ler) (Antrenör/Hakem için opsiyoneldir):",
+                    kategoriler,
+                    default=[],
                 )
 
                 kulup = st.text_input("Kulüp Adı / İl:")
                 submit = st.form_submit_button("Kaydet")
 
-                if submit and qr_id and ad_soyad:
-                    rol_str = " / ".join(rol_secimi)
-                    kat_str = " / ".join(secilen_kategoriler)
-                    conn = get_connection()
-                    try:
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup) VALUES (%s, %s, %s, %s, %s)",
-                            (qr_id.strip(), ad_soyad, rol_str, kat_str, kulup),
+                if submit:
+                    if not qr_id.strip() or not ad_soyad.strip():
+                        st.error(
+                            "❌ Lütfen QR Kod ID ve Ad Soyad alanlarını doldurun!"
                         )
-                        conn.commit()
-                        st.cache_data.clear()
-                        st.success(f"'{ad_soyad}' başarıyla kaydedildi!")
-                        st.rerun()
-                    except psycopg2.IntegrityError:
-                        st.error("Bu QR ID zaten tanımlı!")
-                    finally:
-                        conn.close()
+                    elif not rol_secimi:
+                        st.error("❌ En az bir rol seçmelisiniz!")
+                    else:
+                        rol_str = " / ".join(rol_secimi)
+                        kat_str = " / ".join(secilen_kategoriler)
+                        conn = None
+                        try:
+                            conn = get_connection()
+                            cursor = conn.cursor()
+                            cursor.execute(
+                                """
+                                INSERT INTO katilimcilar (qr_code, ad_soyad, rol, kategori_ad, kulup)
+                                VALUES (%s, %s, %s, %s, %s)
+                            """,
+                                (
+                                    qr_id.strip(),
+                                    ad_soyad.strip(),
+                                    rol_str,
+                                    kat_str,
+                                    kulup.strip(),
+                                ),
+                            )
+                            conn.commit()
+                            st.cache_data.clear()
+                            st.success(
+                                f"🎉 '{ad_soyad.strip()}' başarıyla kaydedildi!"
+                            )
+                        except psycopg2.IntegrityError:
+                            st.error(
+                                f"❌ '{qr_id.strip()}' ID'li kayıt zaten veritabanında var!"
+                            )
+                        except Exception as e:
+                            st.error(f"❌ Kayıt Hatası: {e}")
+                        finally:
+                            if conn:
+                                conn.close()
 
         with tab3:
             st.subheader("📄 PDF Dosyasından Otomatik Aktar")
@@ -658,8 +717,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                     )
 
                     if st.button("🚀 Tüm Sporcuları ve Kategorileri Aktar"):
-                        conn = get_connection()
+                        conn = None
                         try:
+                            conn = get_connection()
                             cursor = conn.cursor()
                             eklenen_sayi = 0
 
@@ -710,8 +770,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 f"🎉 Toplam {eklenen_sayi} sporcu ve kategorileri aktarıldı!"
                             )
                             st.rerun()
+                        except Exception as e:
+                            st.error(f"Aktarım Hatası: {e}")
                         finally:
-                            conn.close()
+                            if conn:
+                                conn.close()
                 except Exception as e:
                     st.error(f"Hata oluştu: {e}")
 
@@ -774,8 +837,9 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         if btn_update:
                             rol_str = " / ".join(yeni_roller)
                             kat_str = " / ".join(yeni_kategoriler)
-                            conn = get_connection()
+                            conn = None
                             try:
+                                conn = get_connection()
                                 cursor = conn.cursor()
                                 cursor.execute(
                                     """
@@ -784,10 +848,10 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                     WHERE qr_code = %s
                                 """,
                                     (
-                                        yeni_ad,
+                                        yeni_ad.strip(),
                                         rol_str,
                                         kat_str,
-                                        yeni_kulup,
+                                        yeni_kulup.strip(),
                                         secilen_qr,
                                     ),
                                 )
@@ -795,13 +859,17 @@ elif sayfa == "⚙️ Yönetim Paneli":
                                 st.cache_data.clear()
                                 st.success("✅ Güncellendi!")
                                 st.rerun()
+                            except Exception as e:
+                                st.error(f"Güncelleme Hatası: {e}")
                             finally:
-                                conn.close()
+                                if conn:
+                                    conn.close()
 
                 with col2:
                     if st.button("❌ Bu Kaydı Sil", type="primary"):
-                        conn = get_connection()
+                        conn = None
                         try:
+                            conn = get_connection()
                             cursor = conn.cursor()
                             cursor.execute(
                                 "DELETE FROM katilimcilar WHERE qr_code = %s",
@@ -811,8 +879,11 @@ elif sayfa == "⚙️ Yönetim Paneli":
                             st.cache_data.clear()
                             st.success("Silindi!")
                             st.rerun()
+                        except Exception as e:
+                            st.error(f"Silme Hatası: {e}")
                         finally:
-                            conn.close()
+                            if conn:
+                                conn.close()
 
         with tab5:
             st.subheader("📋 Kayıtlı Liste")
