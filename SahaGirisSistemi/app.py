@@ -9,11 +9,12 @@ import psycopg2
 import qrcode
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
+from concurrent.futures import ThreadPoolExecutor
 
 # --- YÖNETİCİ ŞİFRESİ VE POSTGRESQL BAGLANTISI ---
 ADMIN_PASSWORD = "1234"
 
-# 🛑 AŞAĞIDAKİ LINKTE KENDİ SUPABASE ŞİFREN BULUNMALI!
+# 🛑 BURAYA KENDİ SUPABASE ŞİFRENİ YAZ!
 DB_URI = "postgresql://postgres.bsdhohsivczydtjnqilf:151608Amasya.@aws-1-eu-west-1.pooler.supabase.com:6543/postgres"
 
 TUM_ROLLER = [
@@ -59,7 +60,6 @@ def init_db():
 init_db()
 
 
-# HIZ İÇİN ÖNBELLEK SÜRESİ ARTIRILDI (ttl=60sn)
 @st.cache_data(ttl=60, show_spinner=False)
 def get_kategoriler():
     conn = get_connection()
@@ -83,12 +83,13 @@ def get_katilimcilar():
         return df
     except Exception:
         return pd.DataFrame(
-            columns=["qr_code", "ad_soyad", "rol", "kategori_ad", "kulup"]
+            columns=["qr_code", "ad_soyad, rol", "kategori_ad", "kulup"]
         )
     finally:
         conn.close()
 
 
+# FONT YÜKLEMEYİ HAFIZADA TUT (HIZLANDIRICI 1)
 @st.cache_resource
 def load_scalable_font(font_size):
     font_paths = [
@@ -105,6 +106,31 @@ def load_scalable_font(font_size):
             except Exception:
                 continue
     return ImageFont.load_default()
+
+
+# ŞABLON RESMİNİ RAM'E AL (HIZLANDIRICI 2)
+@st.cache_resource
+def get_base_template():
+    sablon_yolu = "sablon.png"
+    if not os.path.exists(sablon_yolu):
+        sablon_yolu = os.path.join("SahaGirisSistemi", "sablon.png")
+
+    if os.path.exists(sablon_yolu):
+        base = Image.open(sablon_yolu).convert("RGBA")
+    else:
+        base = Image.new("RGBA", (800, 1200), color="white")
+
+    W, H = base.size
+    overlay = Image.new("RGBA", (W, H), (255, 255, 255, 0))
+    overlay_draw = ImageDraw.Draw(overlay)
+    rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
+    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.64)
+    overlay_draw.rounded_rectangle(
+        [rect_x1, rect_y1, rect_x2, rect_y2],
+        radius=20,
+        fill=(255, 255, 255, 215),
+    )
+    return Image.alpha_composite(base, overlay).convert("RGB")
 
 
 def draw_multiline_autofit(
@@ -198,16 +224,11 @@ def parse_pdf_participants(pdf_file):
     return pd.DataFrame(participants)
 
 
-@st.cache_data(show_spinner=False, max_entries=500)
+@st.cache_data(show_spinner=False, max_entries=1000)
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
-    sablon_yolu = "sablon.png"
-    if not os.path.exists(sablon_yolu):
-        sablon_yolu = os.path.join("SahaGirisSistemi", "sablon.png")
-
-    if os.path.exists(sablon_yolu):
-        kart = Image.open(sablon_yolu).convert("RGBA")
-    else:
-        kart = Image.new("RGBA", (800, 1200), color="white")
+    # Hazır perde şablonunu RAM'den çekiyoruz
+    kart = get_base_template().copy()
+    draw = ImageDraw.Draw(kart)
 
     W, H = kart.size
     gorunur_rol = str(rol).replace("Hakem - ", "").strip()
@@ -223,18 +244,6 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
         ]
     )
 
-    overlay = Image.new("RGBA", kart.size, (255, 255, 255, 0))
-    overlay_draw = ImageDraw.Draw(overlay)
-    rect_x1, rect_y1 = int(W * 0.05), int(H * 0.38)
-    rect_x2, rect_y2 = int(W * 0.95), int(H * 0.64)
-    overlay_draw.rounded_rectangle(
-        [rect_x1, rect_y1, rect_x2, rect_y2],
-        radius=20,
-        fill=(255, 255, 255, 215),
-    )
-
-    kart = Image.alpha_composite(kart, overlay).convert("RGB")
-    draw = ImageDraw.Draw(kart)
     max_text_width = int(W * 0.85)
 
     if is_non_athlete:
@@ -292,10 +301,11 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
                 "#000000",
             )
 
+    # QR KOD HIZLI ÇİZİMİ
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_M,
-        box_size=10,
+        box_size=8,
         border=1,
     )
     qr.add_data(str(qr_data))
@@ -305,31 +315,44 @@ def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     )
 
     qr_w = int(W * 0.30)
-    qr_img = qr_img.resize((qr_w, qr_w))
+    qr_img = qr_img.resize((qr_w, qr_w), Image.Resampling.NEAREST)
     qr_x, qr_y = int((W - qr_w) / 2), int(H * 0.81 - (qr_w / 2))
     kart.paste(qr_img, (qr_x, qr_y))
 
     buf = io.BytesIO()
-    kart.save(buf, format="PNG", optimize=True)
+    kart.save(buf, format="PNG", optimize=False)
     return buf.getvalue()
 
 
-@st.cache_data(show_spinner="Kartlar paketleniyor...")
+# TEK BİR KART İŞLEME YARDIMCISI (THREAD İÇİN)
+def _process_single_card(row):
+    kart_bytes = yaka_karti_olustur(
+        ad_soyad=row["ad_soyad"],
+        rol=row["rol"],
+        kategori=row["kategori_ad"],
+        kulup=row["kulup"],
+        qr_data=row["qr_code"],
+    )
+    dosya_adi = f"{row['qr_code']}_{str(row['ad_soyad']).replace(' ', '_')}.png"
+    return dosya_adi, kart_bytes
+
+
+# PARALEL İŞLEME İLE TOPLU ZIP OLUŞTURMA (HIZLANDIRICI 3)
+@st.cache_data(show_spinner="Kartlar yüksek hızda paketleniyor...")
 def generate_zip_of_cards(df_list):
     zip_buffer = io.BytesIO()
+
+    # Çoklu çekirdek işleme (ThreadPoolExecutor)
+    rows = [row for _, row in df_list.iterrows()]
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        results = list(executor.map(_process_single_card, rows))
+
     with zipfile.ZipFile(
         zip_buffer, "w", zipfile.ZIP_DEFLATED
     ) as zip_file:
-        for idx, row in df_list.iterrows():
-            kart_bytes = yaka_karti_olustur(
-                ad_soyad=row["ad_soyad"],
-                rol=row["rol"],
-                kategori=row["kategori_ad"],
-                kulup=row["kulup"],
-                qr_data=row["qr_code"],
-            )
-            dosya_adi = f"{row['qr_code']}_{str(row['ad_soyad']).replace(' ', '_')}.png"
+        for dosya_adi, kart_bytes in results:
             zip_file.writestr(dosya_adi, kart_bytes)
+
     return zip_buffer.getvalue()
 
 
