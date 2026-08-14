@@ -195,7 +195,6 @@ def parse_pdf_participants(pdf_file):
                         continue
     return pd.DataFrame(participants)
 
-@st.cache_data(show_spinner=False, max_entries=1000)
 def yaka_karti_olustur(ad_soyad, rol, kategori, kulup, qr_data):
     kart = get_base_template().copy()
     draw = ImageDraw.Draw(kart)
@@ -258,7 +257,6 @@ def _process_single_card(row):
     dosya_adi = f"{row['qr_code']}_{str(row['ad_soyad']).replace(' ', '_')}.png"
     return dosya_adi, kart_bytes
 
-@st.cache_data(show_spinner="Kartlar yüksek hızda paketleniyor...")
 def generate_zip_of_cards(df_list):
     zip_buffer = io.BytesIO()
     rows = [row for _, row in df_list.iterrows()]
@@ -656,40 +654,51 @@ elif sayfa == "⚙️ Yönetim Paneli":
                         df_target = df_katilimcilar[df_katilimcilar["kategori_ad"].str.contains(filtre, na=False)]
                     
                     if not df_target.empty:
-                        zip_bytes = generate_zip_of_cards(df_target)
-                        st.download_button(
-                            label=f"📦 {len(df_target)} Adet Kartı ZIP Olarak İndir",
-                            data=zip_bytes,
-                            file_name=f"{filtre.replace(' ', '_')}_Kartlar.zip",
-                            mime="application/zip"
-                        )
+                        st.info(f"Paketlenecek Kişi Sayısı: {len(df_target)}")
+                        if st.button(f"⚙️ {len(df_target)} Adet Kartı Paketlemeye Başla"):
+                            with st.spinner("Kartlar hazırlanıyor, lütfen bekleyin..."):
+                                zip_bytes = generate_zip_of_cards(df_target)
+                                st.session_state["hazir_zip"] = zip_bytes
+                                st.session_state["hazir_zip_name"] = f"{filtre.replace(' ', '_')}_Kartlar.zip"
+                        
+                        if "hazir_zip" in st.session_state and st.session_state["hazir_zip"] is not None:
+                            st.download_button(
+                                label="📥 Hazırlanan ZIP Dosyasını İndir",
+                                data=st.session_state["hazir_zip"],
+                                file_name=st.session_state.get("hazir_zip_name", "Kartlar.zip"),
+                                mime="application/zip"
+                            )
                     else:
                         st.warning("Seçilen filtreye uygun kişi bulunamadı.")
                 
                 st.divider()
-                st.markdown("#### 👤 Tekli Kart Önizleme")
+                st.markdown("#### 👤 Tekli Kart Önizleme & Basım")
                 secilen_kisi_qr = st.selectbox(
                     "Basılacak Kişiyi Seçin:", 
                     options=df_katilimcilar["qr_code"].tolist(),
                     format_func=lambda x: f"{df_katilimcilar[df_katilimcilar['qr_code'] == x]['ad_soyad'].values[0]} ({df_katilimcilar[df_katilimcilar['qr_code'] == x]['rol'].values[0]}) - [{x}]"
                 )
-                kisi_bilgisi = df_katilimcilar[df_katilimcilar["qr_code"] == secilen_kisi_qr].iloc[0]
                 
-                kart_bytes = yaka_karti_olustur(
-                    ad_soyad=kisi_bilgisi["ad_soyad"],
-                    rol=kisi_bilgisi["rol"],
-                    kategori=kisi_bilgisi["kategori_ad"],
-                    kulup=kisi_bilgisi["kulup"],
-                    qr_data=kisi_bilgisi["qr_code"]
-                )
-                
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    st.image(kart_bytes, caption="Basıma Hazır Kart", use_container_width=True)
-                with col2:
-                    st.download_button(
-                        label="📥 Kartı İndir (PNG)",
-                        data=kart_bytes,
-                        file_name=f"YakaKarti_{str(kisi_bilgisi['ad_soyad']).replace(' ', '_')}.png",
-                        mime="image/png"
+                if st.button("🪪 Seçilen Kartı Oluştur"):
+                    kisi_bilgisi = df_katilimcilar[df_katilimcilar["qr_code"] == secilen_kisi_qr].iloc[0]
+                    kart_bytes = yaka_karti_olustur(
+                        ad_soyad=kisi_bilgisi["ad_soyad"],
+                        rol=kisi_bilgisi["rol"],
+                        kategori=kisi_bilgisi["kategori_ad"],
+                        kulup=kisi_bilgisi["kulup"],
+                        qr_data=kisi_bilgisi["qr_code"]
                     )
+                    st.session_state["tekli_kart_bytes"] = kart_bytes
+                    st.session_state["tekli_kart_ad"] = f"YakaKarti_{str(kisi_bilgisi['ad_soyad']).replace(' ', '_')}.png"
+
+                if "tekli_kart_bytes" in st.session_state and st.session_state["tekli_kart_bytes"] is not None:
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        st.image(st.session_state["tekli_kart_bytes"], caption="Basıma Hazır Kart", use_container_width=True)
+                    with col2:
+                        st.download_button(
+                            label="📥 Kartı İndir (PNG)",
+                            data=st.session_state["tekli_kart_bytes"],
+                            file_name=st.session_state.get("tekli_kart_ad", "YakaKarti.png"),
+                            mime="image/png"
+                        )
